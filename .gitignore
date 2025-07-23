@@ -1,0 +1,21 @@
+# ignore external packages folder 
+packages/
+
+# ignore python venv
+venv_ESA/
+.env/
+venv/
+
+# ignore Python cache files
+__pycache__/
+*.pyc
+
+# ignore editor specific files
+.vscode/
+
+# ignore system files
+.DS_Store
+Thumbs.db
+
+# ignore log files
+*.log
