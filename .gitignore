@@ -2,9 +2,8 @@
 packages/
 
 # ignore python venv
-venv_ESA/
-.env/
 venv/
+.venv/
 
 # ignore Python cache files
 __pycache__/
