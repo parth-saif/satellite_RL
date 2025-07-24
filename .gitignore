@@ -9,6 +9,9 @@ venv/
 __pycache__/
 *.pyc
 
+#ignore drone cache files
+cache/
+
 # ignore editor specific files
 .vscode/
 
