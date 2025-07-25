@@ -33,6 +33,24 @@ All the required packages can be installed with the following instructions:
 5. To run existing examples, refer to the 'tests/' folder.
 
 ---
+## Repositry outline
+
+### Main code
+- `src/` - main python programs used to setup and run simulations, as well automated drone flying scripts.
+- `tests/` - python programs to test specific parts and quickstart testing.
+- `models/` - .pth Neural Network models for RL.
+- `notebooks/` - Juypter notebooks for analysis.
+
+### Visualisation
+- `viz_output/` - Vizard binary files for post-visualisation satellite simulations.
+- `images/` - nice images for reference.
+
+### Utilities
+- `config/` - .yaml files to configure various simulations and drone tests.
+- `data/` - useful data like trajectories, logs etc.
+- `scripts/` - installation script.
+
+---
 ## Visualisation
 
 To visualise the satellite simulations, you need to install **Vizard**. The installation instructions can be found [here](https://hanspeterschaub.info/basilisk/Vizard/VizardDownload.html 'Vizard installation'). This allows Unity-based 3D visualisation.
