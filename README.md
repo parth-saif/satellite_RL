@@ -37,9 +37,9 @@ All the required packages can be installed with the following instructions:
 
 To visualise the satellite simulations, you need to install **Vizard**. The installation instructions can be found [here](https://hanspeterschaub.info/basilisk/Vizard/VizardDownload.html 'Vizard installation'). This allows Unity-based 3D visualisation.
 
-![Satellite view](https://github.com/adam-p/saif-esa-bic/images/images/satellite.png 'Satellite')
+![Satellite view](https://github.com/parth-saf/saif-esa-bic/images/images/satellite.png 'Satellite')
 
-![Earth view](https://github.com/adam-p/saif-esa-bic/images/images/earth_sats.png 'Earth view')
+![Earth view](https://github.com/parth-saif/saif-esa-bic/images/images/earth_sats.png 'Earth view')
 
 ## Documentation
 Further documentation is to be added to Notion.
