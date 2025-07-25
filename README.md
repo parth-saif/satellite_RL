@@ -33,7 +33,7 @@ All the required packages can be installed with the following instructions:
 5. To run existing examples, refer to the 'tests/' folder.
 
 ---
-## Repositry outline
+## Repository Outline
 
 ### Main code
 - `src/` - main python programs used to setup and run simulations, as well automated drone flying scripts.
