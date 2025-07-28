@@ -24,12 +24,12 @@ All the required packages can be installed with the following instructions:
 2. Create a Python virtual environment:
    - **Python 3.10**
    - Use **pip + venv**. DO NOT use conda, Basilisk will not build.
-3. In the project folder, and while your virtual environment is active, install the required pacakges in the terminal:
+3. In the project folder, and while your virtual environment is active, install the required packages by calling in the terminal:
    ```
    bash scripts/setup_packages.sh
    ```
-   Now you have everything you need to run simulations and send instructrions to the swarm!
-4. To setup the Crazyflie 2.1+ drones, and radio communication, refer to further documentation and [online resources](https://www.bitcraze.io/documentation/tutorials/getting-started-with-crazyflie-2-x/ 'Get started with the Crazyflie 2.1+')
+   Now you have everything you need to run simulations and send instructions to the swarm!
+4. To setup the Crazyflie 2.1+ drone testbed from scratch, follow the [Crazyflie Setup Instructions](./docs/crazyflie_setup_instructions.md 'Crazyflie Setup').
 5. To run existing examples, refer to the 'tests/' folder.
 
 ---
