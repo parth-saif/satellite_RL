@@ -10,5 +10,8 @@ class RendezvousReward(GlobalReward):
         super().__init__(**kwargs)
 
     def compute_reward(self, state, action):
-        pass
+        """
+        Compute a reward for the chaser satellite based on its state and action.
+        
+        """
 

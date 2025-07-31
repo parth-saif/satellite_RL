@@ -1,3 +1,16 @@
+""""
+fly.py - Module for controlling Crazyflie drones in a testbed environment.
+1. Connect to Crazyflie drones.
+2. Log data from drones.
+3. Edit parameters of drones.
+4. Generate drone trajectories from satellite trajectories.
+5. Upload trajectories to drones.
+6. Control drones using motion commands.
+7. Handle asynchronous logging and parameter editing.
+
+"""
+
+
 # basic imports
 import time
 import logging
