@@ -6,8 +6,6 @@ import numpy as np
 from bsk_rl import act, data, obs, scene, sats # -> actions, data, observations, scenarios, satellites
 from bsk_rl.sim import dyn, fsw # -> dynamics, flight software
 from bsk_rl import GeneralSatelliteTasking # -> general satellite tasking environment
-# basilisk libraries
-from Basilisk.architecture import bskLogging # for debug, info, warning, error logging etc.
 
 # create a target satellite class -> not an agent, just a target
 class TargetSat(sats.Satellite): # inherit from base satellite class#

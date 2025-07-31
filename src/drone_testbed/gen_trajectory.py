@@ -1,35 +1,46 @@
 """
-Drone Orbit Generation Module
+---Trajectory Generation modules---
+
+Drone Orbit Generation
 1. Scale orbit from space-scale to drone-scale.
 2. Generate 4 Cubic Bezier Curve segements for elliptical orbit trajectory.
+3. Create compressed trajectory format for upload.
+
+TODO: Implement RPO trajectory generator, possibly as 7th order polynomial fit on waypoints.
+Also possibly create a parent class for better structure.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib.patches import Ellipse
+from cflib.crazyflie.mem import CompressedSegment
+from cflib.crazyflie.mem import CompressedStart
 
 class DroneOrbitGenerator:
-    def __init__(self, orbital_elems, dist_sf=1e-6, time_sf=1e-2):
+    def __init__(self, orbital_elems, dist_sf=1e-6, speed_up=100):
         """
         Initialise Orbit generator
         :param orbital_elems: List of orbital elements excluding true anomaly.
+        :param dist_sf: Distance scale factor.
+        :param speed_up: Time speed-up factor for drone orbit.
         """
+        self.MU_EARTH = 3.986004418e14 # constant gravitational parameter for Earth
+
         self.orbital_elems = orbital_elems
-        self.a = orbital_elems[0] # semi-major axis in m
+        self.a_unscaled = orbital_elems[0] # semi-major axis in m
         self.e = orbital_elems[1] # eccentricity - non-dim
         self.i = orbital_elems[2] # inclination in rad
         self.a_n = orbital_elems[3] # ascending node in rad
         self.ar_p = orbital_elems[4] # argument of periapsis in rad
 
         self.dist_sf = dist_sf
-        self.time_sf = time_sf
+        self.a = self.a_unscaled * self.dist_sf
 
-        self.ellipse_params = None # initialise 3d ellipse parameters
-        self.bezier_segs = None #  initialise Bezier segments
+        self.ellipse_params = self.orbital_elements_to_ellipse_params() # calculate ellipse params
+        self.bezier_segs = self.ellipse_to_bezier_segments_3d # compute Bezier curve segements
 
-    def scale_trajectory(self):
-        self.a *= self.dist_sf # only need to scale the semi-major axis
+        self.segment_durations = np.array(self.calculate_segment_durations()) # Calculate realistic durations
+        self.time_sf = speed_up
+        self.segment_durations_scaled = self.segment_durations/self.time_sf
     
     def orbital_elements_to_ellipse_params(self):
         """
@@ -99,8 +110,6 @@ class DroneOrbitGenerator:
         """
         Converts 3D ellipse parameters into 4 cubic Bézier curve segments - 4 is enough for general ellipse.
         """
-        self.orbital_elements_to_ellipse_params()
-
         if self.ellipse_params is None:
             return None
             
@@ -120,21 +129,77 @@ class DroneOrbitGenerator:
 
     def evaluate_bezier(self, t, p0, p1, p2, p3): # method to evaluate a bezier segment
         return ((1-t)**3*p0 + 3*(1-t)**2*t*p1 + 3*(1-t)*t**2*p2 + t**3*p3)
+
+    def _true_to_eccentric_anomaly(self, nu):
+        """
+        Converts true anomaly (nu) to eccentric anomaly (E).
+        This provides an intermediate step to getting the average duration of a segment.
+        """
+        # This formula is robust for all quadrants
+        E = 2 * np.arctan(np.sqrt((1 - self.e) / (1 + self.e)) * np.tan(nu / 2))
+        return E
+
+    def _eccentric_to_mean_anomaly(self, E):
+        """
+        Converts eccentric anomaly (E) to mean anomaly (M) using Kepler's Equation.
+        """
+        M = E - self.e * np.sin(E)
+        return M
     
-    def get_drone_orbit(self):
+    def calculate_segment_durations(self):
         """
-        1. Scale the orbit.
-        2. Extract ellipse params.
-        3. Return bezier segements.
+        Computes the time duration for each of the four elliptical quadrant segments
+        based on Kepler's Second Law.
+        
+        Returns:
+            list: duration of each segment in seconds.
         """
+        # Check for valid elliptical orbit
+        if not (0 <= self.e < 1):
+            print(f"Warning: Eccentricity e={self.e:.2f} is not valid for an elliptical orbit. Using equal durations.")
+            # Fallback to a simple period calculation and equal division
+            T = 2 * np.pi * np.sqrt(self.a_unscaled**3 / self.MU_EARTH)
+            return [T/4] * 4
 
-        self.scale_trajectory()
+        # Calculate Mean Motion (n) using the unscaled semi-major axis - mean motion is average angular speed of a satellite
+        # in a circular orbit with the same period. It is used to compute duration from the change in mean anomaly.
+        n = np.sqrt(self.MU_EARTH / self.a_unscaled**3)
 
+        # Define the true anomalies (nu) at the boundaries of the four quadrants - true anomaly is position on orbit.
+        nu_boundaries = [0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi]
+        
+        # Convert true anomalies to mean anomalies
+        E_boundaries = [self._true_to_eccentric_anomaly(nu) for nu in nu_boundaries]
+        M_boundaries = [self._eccentric_to_mean_anomaly(E) for E in E_boundaries]
+
+        # Calculate the time of flight (delta_t) for each segment
+        durations = []
+        for i in range(4):
+            # Handle the wrap-around for the last segment
+            delta_M = M_boundaries[i+1] - M_boundaries[i]
+            if delta_M < 0:
+                delta_M += 2 * np.pi
+                
+            delta_t = delta_M / n
+            durations.append(delta_t)
+            
+        return durations
+    
+    def get_drone_orbit(self): # extract bezier segments and durations, both scaled to drone-scale
         self.orbital_elements_to_ellipse_params()
-
         self.ellipse_to_bezier_segments_3d()
 
-        return self.bezier_segs
+        return self.bezier_segs, self.segment_durations_scaled
+    
+    def get_trajectory(self): # compose trajectory in compressed format for upload. Assume yaw is 0 for now.
+        trajectory = [ # duration, elem_x, elem_y, elem_z, elem_yaw -> the elems are Bezier curve control points.
+            CompressedStart(0.0, 0.0, 0.0, 0.0),
+            CompressedSegment(self.segment_durations_scaled[0], self.bezier_segs[0, :, 0], self.bezier_segs[0, :, 1], self.bezier_segs[0, :, 2], []), # seg 1
+            CompressedSegment(self.segment_durations_scaled[1], self.bezier_segs[1, :, 0], self.bezier_segs[1, :, 1], self.bezier_segs[1, :, 2], []), # seg 2
+            CompressedSegment(self.segment_durations_scaled[2], self.bezier_segs[2, :, 0], self.bezier_segs[2, :, 1], self.bezier_segs[2, :, 2], []), # seg 3
+            CompressedSegment(self.segment_durations_scaled[3], self.bezier_segs[3, :, 0], self.bezier_segs[3, :, 1], self.bezier_segs[3, :, 2], []) # seg4
+        ]
+        return trajectory
 
     def plot_orbits(self, ax):
         """
@@ -174,7 +239,6 @@ class DroneOrbitGenerator:
         ax.set_xlim(mid_x - max_range, mid_x + max_range)
         ax.set_ylim(mid_y - max_range, mid_y + max_range)
         ax.set_zlim(mid_z - max_range, mid_z + max_range)
-
         ax.legend()
         
 
@@ -188,12 +252,15 @@ if __name__ == '__main__':
     target_orb = DroneOrbitGenerator(target_orb_elems, dist_sf=1e-6)
     chaser_orb = DroneOrbitGenerator(chaser_orb_elems, dist_sf=1e-6)
 
-    target_bez = target_orb.get_drone_orbit()
-    chaser_bez = chaser_orb.get_drone_orbit()
+    target_bez, target_dur = target_orb.get_drone_orbit()
+    chaser_bez, chaser_dur = chaser_orb.get_drone_orbit()
 
-    fig = plt.figure(figsize=(12, 10))
-    ax = fig.add_subplot(111, projection='3d')
+    print(target_bez)
 
-    target_orb.plot_orbits(ax)
-    chaser_orb.plot_orbits(ax)
+    # plot both trajectories on sample plot
+    # fig = plt.figure(figsize=(12, 10))
+    # ax = fig.add_subplot(111, projection='3d')
+
+    # target_orb.plot_orbits(ax)
+    # chaser_orb.plot_orbits(ax)
     plt.show()
