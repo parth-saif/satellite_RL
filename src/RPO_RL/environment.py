@@ -104,26 +104,26 @@ if __name__ == "__main__":
             target_kepler = obs[0][9:14]
             chaser_kepler = obs[1][9:14]
 
-            target_data.append(target_kepler.tolist())
-            chaser_data.append(chaser_kepler.tolist())
+            # target_data.append(target_kepler.tolist())
+            # chaser_data.append(chaser_kepler.tolist())
 
             i+=1
         
         time = obs[0][-1]*5700
         target_pos = obs[0][0:3]  # First 3 elements are position
-        #chaser_pos = obs[1][0:3]  # First 3 elements are position       
+        chaser_pos = obs[1][0:3]  # First 3 elements are position       
 
-            # # append to list
-            # target_data.append([time] + target_pos.tolist())
-            # chaser_data.append([time] + chaser_pos.tolist())
-        
+        # append to list
+        target_data.append([time] + target_pos.tolist())
+        chaser_data.append([time] + chaser_pos.tolist())
+    
 
     # # Convert to pandas DataFrames
-    # target_df = pd.DataFrame(target_data, columns=['time', 'x', 'y', 'z'])
-    # chaser_df = pd.DataFrame(chaser_data, columns=['time', 'x', 'y', 'z'])#
+    target_df = pd.DataFrame(target_data, columns=['time', 'x', 'y', 'z'])
+    chaser_df = pd.DataFrame(chaser_data, columns=['time', 'x', 'y', 'z'])#
 
-    target_df = pd.DataFrame(target_data, columns=['semi_major_axis', 'eccentricity', 'inclination', 'ascending_node', 'argument_of_periapsis'])
-    chaser_df = pd.DataFrame(chaser_data, columns=['semi_major_axis', 'eccentricity', 'inclination', 'ascending_node', 'argument_of_periapsis'])
+    # target_df = pd.DataFrame(target_data, columns=['semi_major_axis', 'eccentricity', 'inclination', 'ascending_node', 'argument_of_periapsis'])
+    # chaser_df = pd.DataFrame(chaser_data, columns=['semi_major_axis', 'eccentricity', 'inclination', 'ascending_node', 'argument_of_periapsis'])
     
     # Save to CSV files
     target_df.to_csv('target_trajectory.csv', index=False)

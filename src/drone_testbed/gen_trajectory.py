@@ -1,13 +1,21 @@
 """
 ---Trajectory Generation modules---
 
-Drone Orbit Generation
+TrajectoryGenerator: Base trajectory generation class
+- Contains scaling factor properties.
+
+OrbitGenerator:
+- Generates elliptical orbits as Bezier segments.
 1. Scale orbit from space-scale to drone-scale.
 2. Generate 4 Cubic Bezier Curve segements for elliptical orbit trajectory.
 3. Create compressed trajectory format for upload.
 
-TODO: Implement RPO trajectory generator, possibly as 7th order polynomial fit on waypoints.
-Also possibly create a parent class for better structure.
+ManoeuvreGenerator:
+- Generates 7th order polynomial segements for maneuvers.
+1. Scale maneuver waypoints to drone-scale.
+2. Fit 7th order polynomial segements to waypoints.
+3. Convert to Bezier segments.
+4. Create compressed trajectory format for upload.
 """
 
 import numpy as np
@@ -15,14 +23,54 @@ import matplotlib.pyplot as plt
 from cflib.crazyflie.mem import CompressedSegment
 from cflib.crazyflie.mem import CompressedStart
 
-class DroneOrbitGenerator:
-    def __init__(self, orbital_elems, dist_sf=1e-6, speed_up=100):
+packages_folder = './packages/uav_trajectories/scripts' # path to the uav_trajectories package
+import sys
+sys.path.append(packages_folder) # add the package to the system path
+
+# open source scripts for fitting 7th order polynomial segments from waypoints
+from generate_trajectory import generate_trajectory # open source trajectory generation package
+from uav_trajectory import Trajectory # import the Trajectory class from the package
+
+class DroneTrajectory(Trajectory):
+    """
+    DroneTrajectory child class to handle polynomial trajectories.
+    Inherits from the Trajectory class to provide additional functionality.
+    Adds method to output trajectory as an array instead of csv.
+    """
+    def __init__(self, polynomials=None, duration=None):
+        super().__init__()
+        self.polynomials = polynomials if polynomials is not None else None
+        self.duration = duration if duration is not None else None
+    def to_array(self):
+        """
+        Convert the trajectory to a numpy array format.
+        :return: Numpy array of the trajectory in the format [[time, x, y, z, yaw], ...]
+        """
+        data = np.array([
+        [p.duration] + list(p.px.p) + list(p.py.p) + list(p.pz.p) + list(p.pyaw.p)
+        for p in self.polynomials
+        ])
+        return data
+
+class TrajectoryGenerator: # parent trajectory generator class
+    def __init__(self, dist_sf = 1e-6, speed_up=100):
+        self.dist_sf = dist_sf # space-scale to drone-scale scaling factor
+        self.speed_up = speed_up # speed up factor
+
+    def get_trajectory(self): # extract compressed format trajectory for upload to Crazyflie
+        pass
+
+
+class OrbitGenerator(TrajectoryGenerator):
+    def __init__(self, orbital_elems, dist_sf = 1e-6, speed_up=100):
         """
         Initialise Orbit generator
         :param orbital_elems: List of orbital elements excluding true anomaly.
         :param dist_sf: Distance scale factor.
         :param speed_up: Time speed-up factor for drone orbit.
         """
+        super().__init__(dist_sf, speed_up)
+
         self.MU_EARTH = 3.986004418e14 # constant gravitational parameter for Earth
 
         self.orbital_elems = orbital_elems
@@ -32,15 +80,13 @@ class DroneOrbitGenerator:
         self.a_n = orbital_elems[3] # ascending node in rad
         self.ar_p = orbital_elems[4] # argument of periapsis in rad
 
-        self.dist_sf = dist_sf
         self.a = self.a_unscaled * self.dist_sf
 
         self.ellipse_params = self.orbital_elements_to_ellipse_params() # calculate ellipse params
         self.bezier_segs = self.ellipse_to_bezier_segments_3d # compute Bezier curve segements
 
         self.segment_durations = np.array(self.calculate_segment_durations()) # Calculate realistic durations
-        self.time_sf = speed_up
-        self.segment_durations_scaled = self.segment_durations/self.time_sf
+        self.segment_durations_scaled = self.segment_durations/self.speed_up 
     
     def orbital_elements_to_ellipse_params(self):
         """
@@ -240,8 +286,124 @@ class DroneOrbitGenerator:
         ax.set_ylim(mid_y - max_range, mid_y + max_range)
         ax.set_zlim(mid_z - max_range, mid_z + max_range)
         ax.legend()
-        
 
+class ManoeuvreGenerator(TrajectoryGenerator):
+    def __init__(self, sat_waypoints, num_pieces, max_waypoints=None, dist_sf=1e-6, speed_up=100):
+        """
+        Initialise Orbit generator
+        :param sat_waypoints: Satellite time-waypoints.
+        :param num_pieces: Number of 7th order polynomial segments to fit.
+        :param max_waypoints: Maximum number of waypoints to use in polynomial fit.
+        :param dist_sf: Distance scale factor.
+        :param speed_up: Time speed-up factor for drone orbit.
+        """
+        super().__init__(dist_sf, speed_up)
+    
+        self.sat_waypoints = np.array(sat_waypoints)
+        self.num_pieces = num_pieces
+        self.max_waypoints = max_waypoints if max_waypoints is not None else None
+
+        # if max_waypoints given, reduce the number of waypoints used for fitting
+        if self.max_waypoints is not None and self.sat_waypoints.shape[0] > self.max_waypoints:
+            self.sat_waypoints = self.sat_waypoints[::sat_waypoints.shape[0]//self.max_waypoints]
+
+        # Scale waypoints
+        self.scaled_pos = self.sat_waypoints[:, 1:4] * self.dist_sf
+        self.scaled_time = self.sat_waypoints[:, 0] * self.speed_up
+        self.duration = self.scaled_time[-1,0] # duration of drone manoeuvre
+
+        # set drone waypoints, set yaw = 0 if not provided
+        if self.drone_waypoints.shape[1] < 5:
+            self.drone_waypoints = np.hstack((self.scaled_time, self.scaled_pos, np.zeros((self.drone_waypoints.shape[0], 1))))
+        else:
+            self.drone_waypoints = np.hstack((self.scaled_time, self.scaled_pos))
+
+        self.trajectory = DroneTrajectory() # init drone trajectory
+
+        # generate polynomial trajectories
+        self.traj_array = self.gen_drone_traj()
+        
+    def gen_drone_traj(self):
+        """
+        Generate a drone trajectory as a 7th order polynomial segments from the provided waypoints.
+        """
+        trajectory = generate_trajectory(self.drone_waypoints, self.num_pieces) # this creates a trajectory object with polynomial segments
+        self.trajectory = DroneTrajectory(polynomials=trajectory.polynomials, duration=self.duration) # convert to DroneTrajectory object
+            
+        traj_array = self.trajectory.to_array()  # convert the trajectory to a numpy array format
+        return traj_array
+
+    def poly2bez(self):
+        """
+        Convert polynomial segments to Bezier segments for compression.
+        Match the position and velocity.
+
+        Returns:
+            np.ndarray: An array of shape (num_segments, 4, 3) representing the
+                        control points (P0, P1, P2, P3) for each cubic Bézier segment.
+        """
+
+        num_segments = self.traj_array.shape[0]
+        # Initialize an empty array to store the Bézier control points
+        bezier_segments_array = np.zeros((num_segments, 4, 3))
+
+        # Iterate over each polynomial segment (each row in the input array)
+        for i in range(num_segments):
+            segment_poly_coeffs = self.traj_array[i]
+
+            # Extract coefficients for each dimension (x, y, z)
+            # Coeffs are [c7, c6, c5, c4, c3, c2, c1, c0]
+            coeffs_x = segment_poly_coeffs[1:9]
+            coeffs_y = segment_poly_coeffs[9:17]
+            coeffs_z = segment_poly_coeffs[17:25]
+
+            # Process each dimension
+            for dim_idx, coeffs in enumerate([coeffs_x, coeffs_y, coeffs_z]):
+                c7, c6, c5, c4, c3, c2, c1, c0 = coeffs
+                
+                # 1. Match position at t=0 to find P0
+                p0 = c0
+
+                # 2. Match position at t=1 to find P3
+                p3 = np.sum(coeffs)
+
+                # 3. Match velocity at t=0 to find P1
+                # P'(0) = c1  and  B'(0) = 3 * (P1 - P0)
+                p1 = c1 / 3.0 + p0
+
+                # 4. Match velocity at t=1 to find P2
+                # P'(1) = 7*c7 + 6*c6 + ... + c1
+                poly_deriv_at_1 = np.sum(np.arange(7, 0, -1) * coeffs[:-1])
+                # B'(1) = 3 * (P3 - P2)
+                p2 = p3 - poly_deriv_at_1 / 3.0
+                
+                # Store the control points for the current dimension
+                bezier_segments_array[i, :, dim_idx] = [p0, p1, p2, p3]
+
+        # Append the duration of the segment to the beginning of the array
+        bezier_segments_array = np.insert(bezier_segments_array, 0, segment_poly_coeffs[0], axis=1)
+
+        return bezier_segments_array
+        
+        def get_trajectory(self):
+            trajectory = [CompressedStart(0.0, 0.0, 0.0, 0.0)]
+            #TODO: implement compressed trajectory
+
+    def eval_poly(self):
+        """
+        Return evaluated polynomial positions in the experiment duration - for plotting.
+        """
+        time_vec = np.linspace(0, (self.trajectory.duration)-(self.trajectory.duration)/500, 500)
+    
+        # Evaluate the trajectory at each point in the time vector
+        # The .eval(t) method returns a state object with a .pos attribute
+        eval_points = np.array([self.trajectory.eval(t).pos for t in time_vec])
+
+        return eval_points
+
+
+
+        
 #test
 if __name__ == '__main__':
     import pandas as pd
@@ -249,8 +411,8 @@ if __name__ == '__main__':
     target_orb_elems = pd.read_csv("./target_trajectory.csv").values[0]
     chaser_orb_elems = pd.read_csv("./chaser_trajectory.csv").values[0]
 
-    target_orb = DroneOrbitGenerator(target_orb_elems, dist_sf=1e-6)
-    chaser_orb = DroneOrbitGenerator(chaser_orb_elems, dist_sf=1e-6)
+    target_orb = OrbitGenerator(target_orb_elems, dist_sf=1e-6)
+    chaser_orb = OrbitGenerator(chaser_orb_elems, dist_sf=1e-6)
 
     target_bez, target_dur = target_orb.get_drone_orbit()
     chaser_bez, chaser_dur = chaser_orb.get_drone_orbit()
@@ -258,9 +420,9 @@ if __name__ == '__main__':
     print(target_bez)
 
     # plot both trajectories on sample plot
-    # fig = plt.figure(figsize=(12, 10))
-    # ax = fig.add_subplot(111, projection='3d')
+    fig = plt.figure(figsize=(12, 10))
+    ax = fig.add_subplot(111, projection='3d')
 
-    # target_orb.plot_orbits(ax)
-    # chaser_orb.plot_orbits(ax)
+    target_orb.plot_orbits(ax)
+    chaser_orb.plot_orbits(ax)
     plt.show()

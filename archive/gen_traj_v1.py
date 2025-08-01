@@ -1,5 +1,7 @@
 '''
-This doesnt really work. 7th order polynomial segments are not ideal for ellipse fitting, compared to Bezier curves. Also, it is very numerically difficult with lots of way points to optimise the polynomial segment.
+DOES NOT WORK FOR ELLIPSES. 7th order polynomial segments are NOT good approximations for ellipses, compared to Bezier curves
+Runge oscillations are seen.
+It does work for manoeuvers between
 
 Drone Trajectory Generation Module
 1. Scale trajectories from space-scale to drone-scale.
@@ -29,7 +31,6 @@ class DroneTrajectory(Trajectory):
         Convert the trajectory to a numpy array format.
         :return: Numpy array of the trajectory in the format [[time, x, y, z, yaw], ...]
         """
-        data = np.empty((len(self.polynomials), 8*4+1))
 
         data = np.array([
         [p.duration] + list(p.px.p) + list(p.py.p) + list(p.pz.p) + list(p.pyaw.p)
@@ -39,7 +40,7 @@ class DroneTrajectory(Trajectory):
 
 
 class TrajectoryGenerator:
-    def __init__(self, sat_waypoints=None, num_pieces=5, drone_waypoints=None, drone_traj =None, dist_sf=1e-6, time_sf=1e-1):
+    def __init__(self, sat_waypoints=None, num_pieces=5, drone_waypoints=None, dist_sf=1e-6, time_sf=1e-2):
         """
         Initialize the DroneTrajectory with waypoints and number of pieces.
         
@@ -52,14 +53,14 @@ class TrajectoryGenerator:
         """
         self.sat_waypoints = np.array(sat_waypoints) if sat_waypoints is not None else None
         self.num_pieces = num_pieces
-
-        # optionally drone waypoints and trajectory if already generated
-        self.drone_waypoints = np.array(drone_waypoints) if drone_waypoints is not None else None
-        self.trajectory = drone_traj 
-        self.traj_array = None  # to store the trajectory as a numpy array
-
+        
         self.dist_sf = dist_sf  # Distance scale factor
         self.time_sf = time_sf  # Time scale factor
+        self.duration = None # init drone trajectory duration
+        self.drone_waypoints = self.scale_sat_wp()
+
+        self.trajectory = DroneTrajectory()
+        self.traj_array = None  # to store the trajectory as a numpy array
     
     def scale_sat_wp(self):
         """
@@ -73,41 +74,35 @@ class TrajectoryGenerator:
         
         scaled_waypoints[:, 1:4] *= self.dist_sf # scale x, y, z coordinates of waypoints by distance scale factor
         scaled_waypoints[:, 0] *= self.time_sf # scale time by time scale factor -> make the trajectory faster
+        self.duration = scaled_waypoints[-1,0] # duration of drone trajectory
         self.drone_waypoints = scaled_waypoints
-        return scaled_waypoints
-
-    def scale_drone_wp(self): # optionally, scale the drone waypoints from drone-scale to space-scale
-        """
-        Scale the drone trajectory from drone-scale to space-scale.
-        :return: Scaled waypoints in the format [[time, x, y, z, yaw], ...]
-        """
-        if self.trajectory is None:
-            raise ValueError("Drone trajectory is not generated yet.")
-        
-        scaled_waypoints = self.trajectory.to_array()
-        scaled_waypoints[:, 1:4] /= self.dist_sf  # scale x, y, z coordinates of waypoints by distance scale factor
-        scaled_waypoints[:, 0] /= self.time_sf  # scale time by time scale factor -> make the trajectory slower
         return scaled_waypoints
 
     def gen_drone_traj(self):
         """
         Generate a drone trajectory as a 7th order polynomial segments from the provided waypoints.
+        Return co-efficents of polynomials.
         """
         if self.sat_waypoints is None:
             raise ValueError("Satellite waypoints are not provided.")
         
-        scaled_waypoints = self.scale_sat_wp()
-        self.trajectory = generate_trajectory(scaled_waypoints, self.num_pieces) # this creates a trajectory object with polynomial segments
-
-        # convert trajectory object to DroneTrajectory class
-        if not isinstance(self.trajectory, DroneTrajectory):
-            poly = self.trajectory.polynomials
-            duration = self.trajectory.duration
-            self.trajectory = DroneTrajectory(polynomials=poly, duration=duration)  # convert to DroneTrajectory class
+        trajectory = generate_trajectory(self.drone_waypoints, self.num_pieces) # this creates a trajectory object with polynomial segments
+        self.trajectory = DroneTrajectory(polynomials=trajectory.polynomials, duration=self.duration)
             
-        self.traj_array = self.trajectory.to_array()  # convert the trajectory to a numpy array format
-        
+        self.traj_array = self.trajectory.to_array()  # convert the trajectory to a numpy array format#
+    
         return self.traj_array
+    def eval_poly(self):
+        """
+        Return evaluated polynomial positions in a certain time range.
+        """
+        time_vec = np.linspace(0, (self.trajectory.duration)-0.1, 500)
+    
+        # Evaluate the trajectory at each point in the time vector
+        # The .eval(t) method returns a state object with a .pos attribute
+        eval_points = np.array([self.trajectory.eval(t).pos for t in time_vec])
+
+        return eval_points
 
 if __name__ == "__main__":
     import time
@@ -116,122 +111,41 @@ if __name__ == "__main__":
     import pandas as pd
     # Load satellite waypoints from a CSV file 
     sat_waypoints = pd.read_csv('./target_trajectory.csv').values  # Assuming the CSV has columns: time, x, y, z, yaw
+    print("Satellite Waypoints:", sat_waypoints)
 
-    # reduce the waypoints to 5 for testing
-    if sat_waypoints.shape[0] > 10:
-        sat_waypoints = sat_waypoints[::sat_waypoints.shape[0] //10]
-
+    # Reduce the number of waypoints to 8
+    sat_waypoints = sat_waypoints[::sat_waypoints.shape[0]//8]
+    if sat_waypoints.shape[0] > 8:
+        sat_waypoints = sat_waypoints[:8]
     print("Satellite Waypoints:", sat_waypoints)
     
-    drone_gen = TrajectoryGenerator(sat_waypoints=sat_waypoints, num_pieces=2)
+    
+    drone_gen = TrajectoryGenerator(sat_waypoints=sat_waypoints, num_pieces=4)#, dist_sf=1, time_sf=1)
     drone_waypoints = drone_gen.scale_sat_wp()  # scale the satellite waypoints to drone waypoints
     print(drone_waypoints)
     drone_traj = drone_gen.gen_drone_traj()  # generate the drone trajectory from the scaled waypoints
 
     print(time.time()-start)
 
-    print("Drone Trajectory Array:", drone_traj)
+    #print("Drone Trajectory Array:", drone_traj)
 
     #plot 3d waypoints
-    # import matplotlib.pyplot as plt
-    # from mpl_toolkits.mplot3d import Axes3D
-    # fig = plt.figure()  
-    # ax = fig.add_subplot(111, projection='3d')
-    # ax.plot(drone_waypoints[:, 1], drone_waypoints[:, 2], drone_waypoints[:, 3], marker='o')
-    # ax.set_xlabel('X')
-    # ax.set_ylabel('Y')
-    # ax.set_zlabel('Z')
-    # plt.title('Drone Waypoints in 3D')
-    # plt.show()
-    
     import matplotlib.pyplot as plt
-    def calculate_polynomial(t, coeffs):
-        """
-        Calculates the value of a polynomial at time t.
-        coeffs: list of coefficients [c0, c1, ..., c7]
-        """
-        value = 0
-        for i, c in enumerate(coeffs):
-            value += c * (t ** i)
-        return value
-
-    all_x = []
-    all_y = []
-    all_z = [] # To store z-coordinates for 3D plot
-
-    # Keep track of the actual current position to ensure continuity
-    current_x = 0.0
-    current_y = 0.0
-    current_z = 0.0
-
-    # Assume the first segment implicitly starts at (0,0,0) or some initial state if not specified explicitly.
-    # For these types of polynomial coefficients, the c0 term IS the starting position for that segment
-    # IF the segment time `t` starts from 0.0 for each segment.
-    # The overall path continuity comes from how these polynomials are derived,
-    # i.e., the end point of one polynomial segment should match the start of the next.
-
-    for i, segment in enumerate(drone_traj):
-        duration = segment[0]
-        x_coeffs = segment[1:9]   # x^0 to x^7
-        y_coeffs = segment[9:17]  # y^0 to y^7
-        z_coeffs = segment[17:25] # z^0 to z^7
-
-        # Generate time points for the current segment
-        # Using 100 points per segment for a smooth curve
-        t_segment = np.linspace(0, duration, 100)
-
-        # Calculate x, y, and z values for each time point in the current segment
-        # The c0 terms in the coefficients implicitly handle the starting point of each segment.
-        # The continuity of the overall path depends on how these polynomials were generated
-        # (i.e., the final position of segment N is the initial position of segment N+1).
-        x_values = [calculate_polynomial(t, x_coeffs) for t in t_segment]
-        y_values = [calculate_polynomial(t, y_coeffs) for t in t_segment]
-        z_values = [calculate_polynomial(t, z_coeffs) for t in t_segment]
-
-        # If this is not the first segment, and the first coefficient (c0) of the current segment
-        # does not match the last calculated point of the previous segment,
-        # there might be an issue with how the data is intended to be used for concatenation.
-        # However, usually, trajectory generators ensure c0 of next segment = last point of current segment.
-        # For now, we simply append the calculated values directly.
-
-        all_x.extend(x_values)
-        all_y.extend(y_values)
-        all_z.extend(z_values)
-
-    # --- 2D Plot (X vs Y) ---
-    plt.figure(figsize=(10, 8))
-    plt.plot(all_x, all_y, label='2D Trajectory (X-Y)', color='blue')
-    plt.scatter(all_x[0], all_y[0], color='green', zorder=5, s=100, label='Start Point')
-    plt.scatter(all_x[-1], all_y[-1], color='red', zorder=5, s=100, label='End Point')
-
-    plt.title('2D Trajectory from Polynomial Coefficients')
-    plt.xlabel('X-coordinate')
-    plt.ylabel('Y-coordinate')
-    plt.grid(True)
-    plt.axvline(0, color='grey', linestyle='--', linewidth=0.7)
-    plt.axhline(0, color='grey', linestyle='--', linewidth=0.7)
-    plt.axis('equal') # Ensures that one unit in x is equal to one unit in y
-    plt.legend()
-    plt.show()
-
-    # --- 3D Plot (X, Y, Z) ---
-    fig = plt.figure(figsize=(12, 10))
+    from mpl_toolkits.mplot3d import Axes3D
+    fig = plt.figure()  
     ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(drone_waypoints[:, 1], drone_waypoints[:, 2], drone_waypoints[:, 3], marker='o', label='Waypoints')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
 
-    ax.plot(all_x, all_y, all_z, label='3D Trajectory (X-Y-Z)', color='purple')
-    ax.scatter(all_x[0], all_y[0], all_z[0], color='green', zorder=5, s=100, label='Start Point')
-    ax.scatter(all_x[-1], all_y[-1], all_z[-1], color='red', zorder=5, s=100, label='End Point')
-
-    ax.set_title('3D Trajectory from Polynomial Coefficients')
-    ax.set_xlabel('X-coordinate')
-    ax.set_ylabel('Y-coordinate')
-    ax.set_zlabel('Z-coordinate')
+    # also plot evaluations of poly fit in same plot
+    eval_points = drone_gen.eval_poly()
+    ax.plot(eval_points[:, 0], eval_points[:, 1], eval_points[:, 2], 
+            '-r', lw=2, label='7th Order Polynomial Trajectory',)
     ax.legend()
-    ax.grid(True)
     plt.show()
 
-    # Print the start and end coordinates for reference
-    print(f"Overall Start Point: X={all_x[0]:.4f}, Y={all_y[0]:.4f}, Z={all_z[0]:.4f}")
-    print(f"Overall End Point: X={all_x[-1]:.4f}, Y={all_y[-1]:.4f}, Z={all_z[-1]:.4f}")
+
 
 

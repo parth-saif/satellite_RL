@@ -4,7 +4,7 @@ DroneController class:
 2. Edit parameters of drones.
 3. Upload pre-computed trajectories to drones.
 
-TODO: Implement RPOController child class and add method to run the experiment.
+TODO: Implement RPOController child class and add method to run the experiment.#
 
 """
 
@@ -83,6 +83,8 @@ class DroneController(): # base drone controller class
 class RPOController(DroneController): # inherit from base drone controller
     def __init__(self, uri_list, ):
         super().__init__(uri_list)
+    
+    def swarm_
 
 
 if __name__ == '__main__':
