@@ -118,6 +118,7 @@ if __name__ == "__main__":
     if sat_waypoints.shape[0] > 8:
         sat_waypoints = sat_waypoints[:8]
     print("Satellite Waypoints:", sat_waypoints)
+    print(sat_waypoints.shape)
     
     
     drone_gen = TrajectoryGenerator(sat_waypoints=sat_waypoints, num_pieces=4)#, dist_sf=1, time_sf=1)

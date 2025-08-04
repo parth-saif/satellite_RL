@@ -15,25 +15,29 @@ ManoeuvreGenerator:
 1. Scale maneuver waypoints to drone-scale.
 2. Fit 7th order polynomial segements to waypoints.
 3. Convert to Bezier segments.
-4. Create compressed trajectory format for upload.
+4. Create compressed Bezier trajectory format for upload.
 """
 
 import numpy as np
+from numpy.linalg import inv
+import math
 import matplotlib.pyplot as plt
 from cflib.crazyflie.mem import CompressedSegment
 from cflib.crazyflie.mem import CompressedStart
 
-packages_folder = './packages/uav_trajectories/scripts' # path to the uav_trajectories package
+packages_folders = ['./packages/uav_trajectories/scripts', './tests'] # path to the uav_trajectories package
 import sys
-sys.path.append(packages_folder) # add the package to the system path
+
+for packages_folder in packages_folders:
+    sys.path.append(packages_folder) # add the package to the system path
 
 # open source scripts for fitting 7th order polynomial segments from waypoints
 from generate_trajectory import generate_trajectory # open source trajectory generation package
 from uav_trajectory import Trajectory # import the Trajectory class from the package
 
-class DroneTrajectory(Trajectory):
+class PolyTrajectory(Trajectory):
     """
-    DroneTrajectory child class to handle polynomial trajectories.
+    PolyTrajectory child class to handle polynomial trajectories.
     Inherits from the Trajectory class to provide additional functionality.
     Adds method to output trajectory as an array instead of csv.
     """
@@ -53,18 +57,64 @@ class DroneTrajectory(Trajectory):
         return data
 
 class TrajectoryGenerator: # parent trajectory generator class
+    """
+        Base trajectory generator class. Handles shared proprties and static methods.
+    """
     def __init__(self, dist_sf = 1e-6, speed_up=100):
         self.dist_sf = dist_sf # space-scale to drone-scale scaling factor
         self.speed_up = speed_up # speed up factor
 
+        self.bezier_segs = None # bezier trajectory
+
     def get_trajectory(self): # extract compressed format trajectory for upload to Crazyflie
         pass
 
+    @staticmethod
+    def evaluate_bezier(t, control_points):
+        """
+        Evaluates a Bézier curve of any order at parameter t.
+        
+        Args:
+            t (float): Parameter value between 0 and 1
+            control_points (np.ndarray): Array of shape (n+1, 3) containing control points,
+                                       where n is the order of the curve
+        
+        Returns:
+            np.ndarray: The point on the curve at parameter t
+        """
+        n = len(control_points) - 1  # degree of Bezier curve
+        point = np.zeros(3)
+        
+        for i in range(n + 1):
+            # Calculate Bernstein polynomial coefficient using binomial coeffs
+            coef = math.comb(n, i) * (t ** i) * ((1 - t) ** (n - i))
+            point += coef * control_points[i]
+            
+        return point
+    
+    @staticmethod
+    def comb(a, b): # utility function to compute binomial coefficients
+        f = math.factorial
+        return f(a) / f(b) / f(a - b)
+    
+    def plot_bez(self, ax):
+        t_points = np.linspace(0, 1, 100) # time between 0 and 1 for evaluting Bezier curves
+        all_curve_points = []
+        
+        for i, segment in enumerate(self.bezier_segs):
+            control_points = segment  # Control points from remaining rows
+            curve_points = np.array([self.evaluate_bezier(t, control_points) for t in t_points])
+            all_curve_points.extend(curve_points)
+            ax.plot(curve_points[:, 0], curve_points[:, 1], curve_points[:, 2], 'g-', lw=3, label='Bézier Trajectory' if i == 0 else "")
+            
+            control_polygon = np.array(control_points)
+            ax.plot(control_polygon[:, 0], control_polygon[:, 1], control_polygon[:, 2], 'k--', alpha=0.5, label='Control Polygon' if i == 0 else "")
+            ax.scatter(control_polygon[:, 0], control_polygon[:, 1], control_polygon[:, 2], c='k', marker='s', s=25, label='Control Points' if i == 0 else "")
 
 class OrbitGenerator(TrajectoryGenerator):
     def __init__(self, orbital_elems, dist_sf = 1e-6, speed_up=100):
         """
-        Initialise Orbit generator
+        Orbit Generator computes 4 cubic Bezier curves to generate orbital trajectories.
         :param orbital_elems: List of orbital elements excluding true anomaly.
         :param dist_sf: Distance scale factor.
         :param speed_up: Time speed-up factor for drone orbit.
@@ -173,9 +223,6 @@ class OrbitGenerator(TrajectoryGenerator):
 
         self.bezier_segs = np.array([p[0:4], p[4:8], p[8:12], p[12:16]])
 
-    def evaluate_bezier(self, t, p0, p1, p2, p3): # method to evaluate a bezier segment
-        return ((1-t)**3*p0 + 3*(1-t)**2*t*p1 + 3*(1-t)*t**2*p2 + t**3*p3)
-
     def _true_to_eccentric_anomaly(self, nu):
         """
         Converts true anomaly (nu) to eccentric anomaly (E).
@@ -239,11 +286,13 @@ class OrbitGenerator(TrajectoryGenerator):
     
     def get_trajectory(self): # compose trajectory in compressed format for upload. Assume yaw is 0 for now.
         trajectory = [ # duration, elem_x, elem_y, elem_z, elem_yaw -> the elems are Bezier curve control points.
-            CompressedStart(0.0, 0.0, 0.0, 0.0),
-            CompressedSegment(self.segment_durations_scaled[0], self.bezier_segs[0, :, 0], self.bezier_segs[0, :, 1], self.bezier_segs[0, :, 2], []), # seg 1
-            CompressedSegment(self.segment_durations_scaled[1], self.bezier_segs[1, :, 0], self.bezier_segs[1, :, 1], self.bezier_segs[1, :, 2], []), # seg 2
-            CompressedSegment(self.segment_durations_scaled[2], self.bezier_segs[2, :, 0], self.bezier_segs[2, :, 1], self.bezier_segs[2, :, 2], []), # seg 3
-            CompressedSegment(self.segment_durations_scaled[3], self.bezier_segs[3, :, 0], self.bezier_segs[3, :, 1], self.bezier_segs[3, :, 2], []) # seg4
+            # use first control point as start?
+            CompressedStart(0.0,self.bezier_segs[0, 0, 0], self.bezier_segs[0, 0, 1], self.bezier_segs[0, 0, 2], []),
+            # OMIT first control point as it is assumed start = end of last
+            CompressedSegment(self.segment_durations_scaled[0], self.bezier_segs[0, 1:, 0], self.bezier_segs[0, 1:, 1], self.bezier_segs[0, 1:, 2], []), # seg 1
+            CompressedSegment(self.segment_durations_scaled[1], self.bezier_segs[1, 1:, 0], self.bezier_segs[1, 1:, 1], self.bezier_segs[1, 1:, 2], []), # seg 2
+            CompressedSegment(self.segment_durations_scaled[2], self.bezier_segs[2, 1:, 0], self.bezier_segs[2, 1:, 1], self.bezier_segs[2, 1:, 2], []), # seg 3
+            CompressedSegment(self.segment_durations_scaled[3], self.bezier_segs[3, 1:, 0], self.bezier_segs[3, 1:, 1], self.bezier_segs[3, 1:, 2], []) # seg4
         ]
         return trajectory
 
@@ -256,43 +305,22 @@ class OrbitGenerator(TrajectoryGenerator):
         # Plot a reference sphere for the central body (e.g., Earth)
         ax.scatter([0], [0], [0], c='b', marker='o', s=150, label='Central Body (Focus)')
 
-        # Plot Bézier curves and their control points
-        if self.bezier_segs is not None:
-            t_points = np.linspace(0, 1, 100) # plotting points
-            all_curve_points = []
-            
-            for i, segment in enumerate(self.bezier_segs):
-                p0, p1, p2, p3 = segment
-                curve_points = np.array([self.evaluate_bezier(t, p0, p1, p2, p3) for t in t_points])
-                all_curve_points.extend(curve_points)
-                ax.plot(curve_points[:, 0], curve_points[:, 1], curve_points[:, 2], 'g-', lw=3, label='Bézier Trajectory' if i == 0 else "")
-                
-                control_polygon = np.array([p0, p1, p2, p3])
-                ax.plot(control_polygon[:, 0], control_polygon[:, 1], control_polygon[:, 2], 'k--', alpha=0.5, label='Control Polygon' if i == 0 else "")
-                ax.scatter(control_polygon[:, 0], control_polygon[:, 1], control_polygon[:, 2], c='k', marker='s', s=25, label='Control Points' if i == 0 else "")
+        self.plot_bez(ax) # plot bezier curves
 
         # Set axis labels
         ax.set_xlabel('X (ECI) [m]')
         ax.set_ylabel('Y (ECI) [m]')
         ax.set_zlabel('Z (ECI) [m]')
-        
-        # Auto-scaling axes for better view
-        all_points = np.array(all_curve_points)
-        max_range = np.array([all_points[:,0].max()-all_points[:,0].min(), all_points[:,1].max()-all_points[:,1].min(), all_points[:,2].max()-all_points[:,2].min()]).max() / 2.0
-        mid_x = (all_points[:,0].max()+all_points[:,0].min()) * 0.5
-        mid_y = (all_points[:,1].max()+all_points[:,1].min()) * 0.5
-        mid_z = (all_points[:,2].max()+all_points[:,2].min()) * 0.5
-        ax.set_xlim(mid_x - max_range, mid_x + max_range)
-        ax.set_ylim(mid_y - max_range, mid_y + max_range)
-        ax.set_zlim(mid_z - max_range, mid_z + max_range)
         ax.legend()
 
 class ManoeuvreGenerator(TrajectoryGenerator):
-    def __init__(self, sat_waypoints, num_pieces, max_waypoints=None, dist_sf=1e-6, speed_up=100):
+    def __init__(self, sat_waypoints, num_segments, max_waypoints=None, dist_sf=1e-6, speed_up=100):
         """
-        Initialise Orbit generator
+        Manoeuvre generator fits segemnts of 7th order polynomials to create a trajectory with equal durations.
+        Converts to 7th order Bezier curves for data compression.
+        
         :param sat_waypoints: Satellite time-waypoints.
-        :param num_pieces: Number of 7th order polynomial segments to fit.
+        :param num_segments: Number of 7th order polynomial segments to fit.
         :param max_waypoints: Maximum number of waypoints to use in polynomial fit.
         :param dist_sf: Distance scale factor.
         :param speed_up: Time speed-up factor for drone orbit.
@@ -300,7 +328,7 @@ class ManoeuvreGenerator(TrajectoryGenerator):
         super().__init__(dist_sf, speed_up)
     
         self.sat_waypoints = np.array(sat_waypoints)
-        self.num_pieces = num_pieces
+        self.num_segments = num_segments
         self.max_waypoints = max_waypoints if max_waypoints is not None else None
 
         # if max_waypoints given, reduce the number of waypoints used for fitting
@@ -310,25 +338,27 @@ class ManoeuvreGenerator(TrajectoryGenerator):
         # Scale waypoints
         self.scaled_pos = self.sat_waypoints[:, 1:4] * self.dist_sf
         self.scaled_time = self.sat_waypoints[:, 0] * self.speed_up
-        self.duration = self.scaled_time[-1,0] # duration of drone manoeuvre
+        self.drone_waypoints = np.hstack((self.scaled_time[:, np.newaxis], self.scaled_pos))
+        self.duration = self.drone_waypoints[-1, 0] # duration of drone manoeuvre
 
         # set drone waypoints, set yaw = 0 if not provided
         if self.drone_waypoints.shape[1] < 5:
-            self.drone_waypoints = np.hstack((self.scaled_time, self.scaled_pos, np.zeros((self.drone_waypoints.shape[0], 1))))
-        else:
-            self.drone_waypoints = np.hstack((self.scaled_time, self.scaled_pos))
-
-        self.trajectory = DroneTrajectory() # init drone trajectory
+            zeros = np.zeros((self.drone_waypoints.shape[0], 1))
+            self.drone_waypoints = np.hstack((self.drone_waypoints, zeros))
+        self.trajectory = PolyTrajectory() # init drone trajectory
 
         # generate polynomial trajectories
         self.traj_array = self.gen_drone_traj()
+
+        # convert to bezier trajectory
+        self.bezier_segs = self.poly2bez()
         
     def gen_drone_traj(self):
         """
         Generate a drone trajectory as a 7th order polynomial segments from the provided waypoints.
         """
-        trajectory = generate_trajectory(self.drone_waypoints, self.num_pieces) # this creates a trajectory object with polynomial segments
-        self.trajectory = DroneTrajectory(polynomials=trajectory.polynomials, duration=self.duration) # convert to DroneTrajectory object
+        trajectory = generate_trajectory(self.drone_waypoints, self.num_segments) # this creates a trajectory object with polynomial segments
+        self.trajectory = PolyTrajectory(polynomials=trajectory.polynomials, duration=self.duration) # convert to DroneTrajectory object
             
         traj_array = self.trajectory.to_array()  # convert the trajectory to a numpy array format
         return traj_array
@@ -339,55 +369,90 @@ class ManoeuvreGenerator(TrajectoryGenerator):
         Match the position and velocity.
 
         Returns:
-            np.ndarray: An array of shape (num_segments, 4, 3) representing the
-                        control points (P0, P1, P2, P3) for each cubic Bézier segment.
+            np.ndarray: An array of shape (num_segments, 8, 3) representing the
+                        control points for each 7th order Bezier curve and durat
         """
+        matrix = []
+        for k in range(0, 8):
+            matrixrow = []
+            for i in range(0, 8):
+                if i > k:
+                    matrixrow.append(0)
+                else:
+                    eff = self.comb(7 - i, k - i) * pow(-1, k - i) * self.comb(7, i)
+                    matrixrow.append(eff)
+            matrix.append(matrixrow)
 
-        num_segments = self.traj_array.shape[0]
-        # Initialize an empty array to store the Bézier control points
-        bezier_segments_array = np.zeros((num_segments, 4, 3))
+        matrixnp = np.array(matrix)
+        invmtr = inv(matrixnp)
 
-        # Iterate over each polynomial segment (each row in the input array)
+        bezier_traj = []
+
+        for trj in self.traj_array:
+            duration = trj[0]
+            multip = 1
+            for i in range(8):
+                trj[1 + i] *= multip
+                trj[9 + i] *= multip
+                trj[17 + i] *= multip
+                multip *= duration
+
+            xnp = np.transpose(np.array(trj[1:9]))
+            ynp = np.transpose(np.array(trj[9:17]))
+            znp = np.transpose(np.array(trj[17:25]))
+
+            xctrl = np.matmul(invmtr, xnp).tolist()
+            yctrl = np.matmul(invmtr, ynp).tolist()
+            zctrl = np.matmul(invmtr, znp).tolist()
+
+            # Stack control points into shape (8,3)
+            control_points = np.column_stack((xctrl, yctrl, zctrl))        
+
+            bezier_traj.append(control_points)    
+
+        return np.array(bezier_traj)
+
+    def get_trajectory(self): # compose compressed trajectory, assuming yaw is 0 for now.
+        trajectory = [CompressedStart(0.0,self.bezier_segs[0, 0, 0], self.bezier_segs[0, 0, 1], self.bezier_segs[0, 0, 2], [])]
+        num_segments = self.bezier_segs.shape[0]
+        segment_duration = self.duration / num_segments # use equal durations for segments
         for i in range(num_segments):
-            segment_poly_coeffs = self.traj_array[i]
+            trajectory.append(
+                CompressedSegment(
+                    segment_duration,
+                    self.bezier_segs[i, 1:, 0],  # Slice to get points 1 through 7 for x
+                    self.bezier_segs[i, 1:, 1],  # Slice to get points 1 through 7 for y
+                    self.bezier_segs[i, 1:, 2],  # Slice to get points 1 through 7 for z
+                    []  # Assuming yaw is not used here
+                )
+            )
+        return trajectory
 
-            # Extract coefficients for each dimension (x, y, z)
-            # Coeffs are [c7, c6, c5, c4, c3, c2, c1, c0]
-            coeffs_x = segment_poly_coeffs[1:9]
-            coeffs_y = segment_poly_coeffs[9:17]
-            coeffs_z = segment_poly_coeffs[17:25]
+    def plot_manoeuvre(self, ax, plot_poly=True, plot_bezier=True):
+        """
+        Plots waypoints, a 7th-order polynomial trajectory, and Bézier segments on a 3D axis.
 
-            # Process each dimension
-            for dim_idx, coeffs in enumerate([coeffs_x, coeffs_y, coeffs_z]):
-                c7, c6, c5, c4, c3, c2, c1, c0 = coeffs
-                
-                # 1. Match position at t=0 to find P0
-                p0 = c0
+        Args:
+            ax (Axes3D): The matplotlib 3D axes object to plot on.
+            plot_poly (bool): If True, plots the polynomial trajectory.
+            plot_bezier (bool): If True, plots the Bézier trajectory.
 
-                # 2. Match position at t=1 to find P3
-                p3 = np.sum(coeffs)
+        """
+        time_vec = np.linspace(0, self.trajectory.duration - self.trajectory.duration/500, 500)
 
-                # 3. Match velocity at t=0 to find P1
-                # P'(0) = c1  and  B'(0) = 3 * (P1 - P0)
-                p1 = c1 / 3.0 + p0
+        # Plot the reference waypoints
+        ax.scatter(self.drone_waypoints[:, 1], self.drone_waypoints[:, 2], self.drone_waypoints[:, 3], 
+                color='red', s=100, label='Waypoints', depthshade=False, zorder=10)
 
-                # 4. Match velocity at t=1 to find P2
-                # P'(1) = 7*c7 + 6*c6 + ... + c1
-                poly_deriv_at_1 = np.sum(np.arange(7, 0, -1) * coeffs[:-1])
-                # B'(1) = 3 * (P3 - P2)
-                p2 = p3 - poly_deriv_at_1 / 3.0
-                
-                # Store the control points for the current dimension
-                bezier_segments_array[i, :, dim_idx] = [p0, p1, p2, p3]
+        # Plot the 7th-order polynomial trajectory
+        if plot_poly:
+            poly_points = np.array([self.trajectory.eval(t).pos for t in time_vec])
+            ax.plot(poly_points[:, 0], poly_points[:, 1], poly_points[:, 2], 
+                    'b-', lw=3, label='7th Order Polynomial')
 
-        # Append the duration of the segment to the beginning of the array
-        bezier_segments_array = np.insert(bezier_segments_array, 0, segment_poly_coeffs[0], axis=1)
-
-        return bezier_segments_array
-        
-        def get_trajectory(self):
-            trajectory = [CompressedStart(0.0, 0.0, 0.0, 0.0)]
-            #TODO: implement compressed trajectory
+        # Plot the converted Bézier segments
+        if plot_bezier:
+            self.plot_bez(ax)
 
     def eval_poly(self):
         """
@@ -401,9 +466,6 @@ class ManoeuvreGenerator(TrajectoryGenerator):
 
         return eval_points
 
-
-
-        
 #test
 if __name__ == '__main__':
     import pandas as pd
@@ -411,17 +473,33 @@ if __name__ == '__main__':
     target_orb_elems = pd.read_csv("./target_trajectory.csv").values[0]
     chaser_orb_elems = pd.read_csv("./chaser_trajectory.csv").values[0]
 
+    from waypoint_gen import generate_waypoints
+    start = (1,1,1)
+    end = (12, 3, 5)
+    num_points = 50
+    t = np.linspace(0,10, num_points)
+
+    wp, _ = generate_waypoints(start, end, num_points, method='bezier')
+    
+    wp = np.hstack([t[:, np.newaxis], wp])
+    #print(wp)
+    mg = ManoeuvreGenerator(sat_waypoints=wp, num_segments=5, dist_sf=1, speed_up=1)
+    print(mg.get_trajectory())
+
     target_orb = OrbitGenerator(target_orb_elems, dist_sf=1e-6)
     chaser_orb = OrbitGenerator(chaser_orb_elems, dist_sf=1e-6)
 
     target_bez, target_dur = target_orb.get_drone_orbit()
     chaser_bez, chaser_dur = chaser_orb.get_drone_orbit()
 
-    print(target_bez)
+    
 
     # plot both trajectories on sample plot
     fig = plt.figure(figsize=(12, 10))
     ax = fig.add_subplot(111, projection='3d')
+
+    mg.plot_manoeuvre(ax, plot_poly=False)
+
 
     target_orb.plot_orbits(ax)
     chaser_orb.plot_orbits(ax)

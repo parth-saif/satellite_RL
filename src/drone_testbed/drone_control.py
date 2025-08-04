@@ -83,9 +83,6 @@ class DroneController(): # base drone controller class
 class RPOController(DroneController): # inherit from base drone controller
     def __init__(self, uri_list, ):
         super().__init__(uri_list)
-    
-    def swarm_
-
 
 if __name__ == '__main__':
     URI1 = 'radio://0/80/2M/E7E7E7E7E7'
