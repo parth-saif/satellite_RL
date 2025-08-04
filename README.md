@@ -17,6 +17,7 @@ We use a few key open-source packages in the development of this project.
 - [Basilisk](https://avslab.github.io/basilisk/ 'Basilisk') is used as the simulation engine for satellite dynamics.
 - [BSK-RL](https://avslab.github.io/bsk_rl/index.html 'bsk-rl') is a package for constructing Gymnasium environments for spacecraft tasking problems, using Basilisk.
 - [Crazyflie Python API](https://github.com/bitcraze/crazyflie-lib-python 'Crazyflie Python API') is used to send instructions to the Crazyflie 2.1+ drones.
+- [uav_trajectories](https://github.com/whoenig/uav_trajectories 'UAV Trajectory Generation') is used to fit 7th order polynomial segements to waypoints, as part of drone trajectory creation.
 
 All the required packages can be installed with the following instructions:
 
@@ -53,7 +54,12 @@ All the required packages can be installed with the following instructions:
 ---
 ## Visualisation
 
-To visualise the satellite simulations, you need to install **Vizard**. The installation instructions can be found [here](https://hanspeterschaub.info/basilisk/Vizard/VizardDownload.html 'Vizard installation'). This allows Unity-based 3D visualisation.
+To visualise the satellite simulations, you need to install [Vizard](https://hanspeterschaub.info/basilisk/Vizard/VizardDownload.html 'Vizard installation'). To run the visualiser on Linux from a terminal:
+```
+cd Vizard_Linux/
+sudo ./Vizard.x86_64
+```
+You may need to restart the terminal after some time for continued use.
 
 ![Satellite view](./images/satellite.png 'Satellite')
 

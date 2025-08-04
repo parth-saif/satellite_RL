@@ -3,8 +3,12 @@ DroneController class:
 1. Log data from drones.
 2. Edit parameters of drones.
 3. Upload pre-computed trajectories to drones.
-
-TODO: Implement RPOController child class and add method to run the experiment.#
+---
+RPOController:
+Inherits from base DroneController, specifically for RPO experiments
+Adds the following functionalities:
+- upload orbits and rendezvous trajectories to relevant drones.
+- 
 
 """
 
@@ -91,18 +95,82 @@ class RPOController(DroneController): # inherit from base drone controller
     """
     Controller for RPO missions with drone swarm.
     """
-    def __init__(self, uri_list, ):
+    def __init__(self, uri_list, trajectories):
         super().__init__(uri_list)
-    
-    def upload_orbits(self, scf, trajectory): # method for parallel upload of orbits
-        """
-        Upload orbit trajectory to drones.
-        :param trajectory: Individual drone's trajectory, passed here from
-        """
-        traj_id = 1 # trajectory id for the natural orbits is assumed to be 1 for all drones
-        self.upload_trajectory(scf.cf, traj_id, trajectory)
-    
+        self.target_sat_uri = self.uri_list[0] # assume target sat is at index 0
+        self.chaser_sat_uri = self.uri_list[1] # chaser defined as second
 
+        self.target_orb, self.chaser_orb, self.chaser_rendez = trajectories
+    
+    def upload_trajectories(self, scf): # uploading rendezvous manoeuvre
+        """
+        Upload rendezvous trajectory to chaser drone only.
+        :param scf: Swarm drone instance
+        :param traj_id: Trajectory id for rendezvous manoeuvre
+        :param trajectory: Individual drone's trajectory
+        """
+        if scf.__dict__['_link_uri'] == self.target_sat_uri: # only upload to target
+            # upload orbit
+            traj_id = 1
+            self.upload_trajectory(scf.cf, traj_id, self.target_orb)
+        elif scf.__dict__['_link_uri'] == self.chaser_sat_uri:
+            # upload orbit
+            traj_id = 1
+            self.upload_trajectory(scf.cf, traj_id, self.chaser_orb)
+
+            # upload manoeuvre
+            traj_id = 2
+            self.upload_trajectory(scf.cf, traj_id, self.chaser_rendez)
+
+            # upload tracking -> same as trajectory of target
+            traj_id = 3
+            self.upload_trajectory(scf.cf, traj_id, self.target_orb)
+
+    def run_sequence(self,scf, **kwargs):
+        """
+        Run an RPO sequence demonstration. 
+        1. Arm and take-off.
+        2. Begin orbits.
+        3. After some time, initiate rendezvous manoeuvre.
+        4. Land both drones and disarm.
+
+        :param scf: Swarm drone instance
+        :param **kwargs: variables to configure the sequence.
+        """
+        # Arm the Crazyflie
+        self.arm(scf)
+
+        # activate HL commander
+        self.activate_hl_commander(scf)
+
+        #set mellinger PID controller
+        self.activate_mellinger(scf)
+        commander = scf.cf.high_level_commander
+
+        # set group masks for each drone
+        if scf.__dict__['_link_uri'] == self.chaser_sat_uri:
+            commander.set_group_mask(1) # chaser is group 1
+        elif scf.__dict__['_link_uri'] == self.target_sat_uri:
+            commander.set_group_mask(2) # target is group 2
+
+        commander.takeoff(kwargs['take_off_h'], kwargs['take_off_dur']) # take off
+        time.sleep(3.0)
+
+        rendezvous_time = kwargs['rendez_time']
+        for i in range(kwargs['num_orbits']): # run orbits
+            commander.start_trajectory(trajectory_id = 1, time_scale=1.0, relative_position = True, group_mask=0) # orbit, group mask = 0 means applied to all drones
+            start_time = time.time()
+            end_time = start_time + rendezvous_time
+            if time.time() > end_time: # at rendezvous time, tell chaser to do manoeuvre
+                commander.start_trajectory(trajectory_id=2, group_mask=1)
+                # might need a sleep here?
+                commander.start_trajectory(trajector_id=3, group_mask=1)
+                break # do one orbit and break?
+        
+        # land
+        time.sleep(0.2)
+        commander.land(0.0, kwargs['land_dur'])
+        commander.stop() # disarm
 
 if __name__ == '__main__':
     URI1 = 'radio://0/80/2M/E7E7E7E7E7'
