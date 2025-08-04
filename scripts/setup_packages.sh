@@ -96,3 +96,37 @@ else
     echo "Crazyflie Python API installed successfully."
 fi
 
+# --- Trajectory Generation Package ---
+echo "--- Installing Trajectory Generation Package (uav_trajectories) ---"
+PACKAGE3_NAME="uav_trajectories"
+PACKAGE3_REPO="https://github.com/whoenig/uav_trajectories.git"
+PACKAGE3_SRC_DIR="$EXTERNAL_PACKAGES_DIR/$PACKAGE3_NAME"
+
+# Install dependencies for this package
+sudo apt-get install -y libeigen3-dev libboost-program-options-dev libboost-filesystem-dev libnlopt-cxx-dev libgoogle-glog-dev
+
+# Check if source directory already exists
+if [ -d "$PACKAGE3_SRC_DIR" ]; then
+    echo "Source for $PACKAGE3_NAME already exists. Skipping."
+else
+    echo "Cloning $PACKAGE3_NAME source from $PACKAGE3_REPO..."
+    git clone "$PACKAGE3_REPO" "$PACKAGE3_SRC_DIR" || { echo "Error: Failed to clone $PACKAGE3_NAME."; exit 1; }
+    # Build the package
+    echo "Building $PACKAGE3_NAME..."
+    cd "$PACKAGE3_SRC_DIR"
+    mkdir -p build
+    cd build
+    cmake ..
+    make
+fi
+
+# Check if the build was successful
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to build $PACKAGE3_NAME."
+    exit 1
+else
+    echo "$PACKAGE3_NAME built successfully."
+fi
+cd "$PROJECT_ROOT" # Return to project root
+
+echo "--- All packages installed successfully ---"

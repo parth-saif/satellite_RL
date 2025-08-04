@@ -20,13 +20,20 @@ from cflib.crazyflie.swarm import CachedCfFactory
 from cflib.crazyflie.swarm import Swarm
 
 class DroneController(): # base drone controller class
+    """
+    Base Drone controller class.
+    """
     def __init__(self, uri_set):
+        """
+        Initialise swarm.
+        :param uri_set: Set of URIs for drones in the swarm.
+        """
         self.uri_set = uri_set
         self.uri_list = list(self.uri_set)
         self.swarm_size = len(self.uri_list)
         self.state_logs = [[] for _ in range(self.swarm_size)]
 
-    def activate_hl_commander(self, scf): # set high level commander to on
+    def activate_hl_commander(self, scf): # set high level commander to ON
         scf.cf.param.set_value('commander.enHighLevel', '1')
     
     def activate_mellinger(self, scf): # activate Mellinger PID-like controller
@@ -81,14 +88,28 @@ class DroneController(): # base drone controller class
 
 # RPO controller child class
 class RPOController(DroneController): # inherit from base drone controller
+    """
+    Controller for RPO missions with drone swarm.
+    """
     def __init__(self, uri_list, ):
         super().__init__(uri_list)
+    
+    def upload_orbits(self, scf, trajectory): # method for parallel upload of orbits
+        """
+        Upload orbit trajectory to drones.
+        :param trajectory: Individual drone's trajectory, passed here from
+        """
+        traj_id = 1 # trajectory id for the natural orbits is assumed to be 1 for all drones
+        self.upload_trajectory(scf.cf, traj_id, trajectory)
+    
+
 
 if __name__ == '__main__':
     URI1 = 'radio://0/80/2M/E7E7E7E7E7'
     URI2 = 'radio://0/80/2M/E7E7E7E7E8'
 
-    uri_set = { # for some reason, swarm code for crazyflie uses sets instead of lists, probably for backend parallel.
+    # for some reason, swarm code for crazyflie uses sets instead of lists, probably for backend parallel.
+    uri_set = { 
     URI1,
     URI2,}
 
@@ -116,7 +137,7 @@ if __name__ == '__main__':
 
     # factory = CachedCfFactory(rw_cache='./cache')
 
-    # with Swarm(uris, factory=factory) as swarm:
+    # with Swarm(uri_set, factory=factory) as swarm:
     #     swarm.reset_estimators()
 
     #     swarm.parallel(controller.start_position_printing)
