@@ -1,4 +1,7 @@
-# import required libraries
+"""
+Multi-agent environment definitions.
+Define the Deputy and Cheif Satellites' observation and action spaces.
+"""
 import gymnasium as gym
 import numpy as np
 
@@ -7,76 +10,105 @@ from bsk_rl import act, data, obs, scene, sats # -> actions, data, observations,
 from bsk_rl.sim import dyn, fsw # -> dynamics, flight software
 from bsk_rl import GeneralSatelliteTasking # -> general satellite tasking environment
 
-# create a target satellite class -> not an agent, just a target
-class TargetSat(sats.Satellite): # inherit from base satellite class#
-    # implicitly call the parent class constructor
-    observation_spec = [
-        obs.SatProperties( # self properties of the satellite
-            # position in inertial frame
-            dict(prop="r_BN_N", module="dynamics", norm=1, name="Position in Inertial Frame"),
-            # velocity in inertial frame
-            dict(prop="v_BN_N", module="dynamics", norm=1, name="Velocity in Inertial Frame"),
-            # angular body rate relative to inertial frame in body
-            dict(prop="omega_BN_B", module="dynamics", norm=1, name="Angular Body Rate in Body Frame"),
+import rel_obs_elems as roe # relative orbital elements
 
-            # keplerian elements
-            dict(prop="semi_major_axis", module="dynamics", name="Semi-major Axis"),
-            dict(prop="eccentricity", module="dynamics", name="Eccentricity"),
-            dict(prop="inclination", module="dynamics",  name="Inclination"),
-            dict(prop="ascending_node", module="dynamics",  name="Ascending Node"),
-            dict(prop="argument_of_periapsis", module="dynamics",  name="Argument of Periapsis"),
-            dict(prop="true_anomaly", module="dynamics",  name="True Anomaly"),
-            ),
+class OEDynamics(dyn.BasicDynamicsModel):
+    """
+    Modified dynamics model to calculate further orbital elements:
+    - Eccentric Anomaly, E
+    - Mean Anomaly, M
+    - Argument of Latitude, u
+    - Eccentricy vector, e_vec
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    @property
+    def eccentric_anomaly(self):
+        """
+        Calculate the Eccentric Anomaly E from True Anomaly nu and Eccentricity e.
+        """
+        nu = self.true_anomaly
+        e = self.eccentricity
+
+        E_cos = (e + np.cos(nu)) / (1 + e * np.cos(nu))
+        E_sin = (np.sqrt(1 - e**2) * np.sin(nu)) / (1 + e * np.cos(nu))
+        E = np.arctan2(E_sin, E_cos)
+        return E
+    
+    @property
+    def mean_anomaly(self):
+        """
+        Calculate Mean Anomaly M.
+        """
+        e = self.eccentricity
+        E = self.eccentric_anomaly
+        M = E - e*np.sin(E)
+        return M
+    
+    @property
+    def argument_of_latitude(self):
+        """
+        Calculate the Argument of Latitude u from Argument of Periapsis omega.
+        """
+        omega = self.argument_of_periapsis
+        u = omega + self.mean_anomaly
+        return u
+    
+    @property
+    def eccentricity_vec(self):
+        """
+        Eccentricity Vector
+        """
+        e =  self.eccentricity
+        omega = self.argument_of_periapsis
+        e_vec =  e*np.array([np.cos(omega), np.sin(omega)])
+        return e_vec
+
+class ChiefSat(sats.Satellite): 
+    """
+    Chief satellite defined as agent
+    Observations: Time (1D)
+    Actions: Drift (do nothing)
+    """
+    observation_spec = [
         obs.Time() # time in seconds since start of simulation, normalised by the total simulation time
         ]
     action_spec = [act.Drift()] # action is to do nothing
-    dyn_type = dyn.BasicDynamicsModel 
+    dyn_type = OEDynamics 
     fsw_type = fsw.BasicFSWModel
 
-#create a chaser satellite class -> this is the agent
-class ChaserSat(sats.Satellite): # inherit from base satellite class and target satellite class
+class DeputySat(sats.Satellite): 
+    """
+    Deputy satellite defined as agent.
+    Observations: Fuel remaining (Continuous 1D); Relative Orbital Elements (Continuous 6D); Time (1D)
+    Action: Impulsive Thrust in Hill frame (Continuous 4D)
+    """
     observation_spec = [obs.SatProperties( # self properties of the satellite
-        # position in inertial frame
-        dict(prop="r_BN_N", module="dynamics", norm=1, name="Position in Inertial Frame"),
-        # velocity in inertial frame
-        dict(prop="v_BN_N", module="dynamics", norm=1, name="Velocity in Inertial Frame"),
-        # angular body rate relative to inertial frame in body frame
-        dict(prop="omega_BN_B", module="dynamics", norm=1, name="Angular Body Rate in Body Frame"),
-        
-
-        # keplerian elements
-        dict(prop="semi_major_axis", module="dynamics", name="Semi-major Axis"),
-        dict(prop="eccentricity", module="dynamics", name="Eccentricity"),
-        dict(prop="inclination", module="dynamics",  name="Inclination"),
-        dict(prop="ascending_node", module="dynamics",name="Ascending Node"),
-        dict(prop="argument_of_periapsis", module="dynamics", name="Argument of Periapsis"),
-        dict(prop="true_anomaly", module="dynamics", name="True Anomaly"),
-
         # fuel remaining
         dict(prop="dv_available", module="fsw", norm=1, name="Fuel Remaining"),
     ),
-    obs.RelativeProperties( # relative properties to the target satellite - using Hill frame as relative dynamics are more easily modeled -> might be easier for RL agent to learn
-        # relative position of chaser to target in target's Hill frame
-        dict(prop="r_DC_Hc", norm=1, name="Relative Position in Hill Frame"),
-        # relative velocity of chaser to target in target's Hill frame
-        dict(prop="v_DC_Hc", norm=1, name="Relative Velocity in Hill Frame"),
-        ### possibly add more relative properties like relative angular rate, relative attitude etc. if needed (not currently implemented)
-        chief_name="TargetSat" # name of the target satellite to get relative properties
+    obs.RelativeProperties( # relative properties to the target satellite - using Hill frame
+        dict(fn=roe.delta_a, name="delta_a"), # relative semi-major axis
+        dict(fn=roe.delta_lambda, name="delta_lambda"), # relative mean longitude
+        dict(fn=roe.delta_e_vec, name="delta_e_vec"), # relative eccentricity vector
+        dict(fn=roe.delta_i_vec, name="delta_i_vec"), # relative inclination vector
+        chief_name="ChiefSat" 
     ),
-    obs.Time() # time in seconds since start of simulation
+    obs.Time()
     ]
-    action_spec = [act.ImpulsiveThrust()] # continuous action is to apply an impulsive thrust in the Hill frame
-    dyn_type = dyn.BasicDynamicsModel # dynamics model for the satellite
+    action_spec = [act.ImpulsiveThrustHill("ChiefSat")] # continuous action is to apply an impulsive thrust in the Hill frame
+    dyn_type = OEDynamics
     fsw_type = fsw.MagicOrbitalManeuverFSWModel # flight software model for the satellite -> has fuel remaining property for thruster control
 
 
 # test environments
 if __name__ == "__main__":
     # create a target satellite
-    target_sat = TargetSat(name="TargetSat")
+    target_sat = ChiefSat(name="ChiefSat")
 
     # create a chaser satellite
-    chaser_sat = ChaserSat(name="ChaserSat")
+    chaser_sat = DeputySat(name="DeputySat")
 
      # Create lists to store data
     target_data = []
@@ -87,46 +119,38 @@ if __name__ == "__main__":
     env = GeneralSatelliteTasking(satellites=[target_sat, chaser_sat], scenario=scene.Scenario(), rewarder = data.NoReward(), time_limit=5700, log_level="INFO", terminate_on_time_limit=True, vizard_dir="viz_output")
     obs = env.reset()
     print("Environment created:", env)
-    target_sat.generate_sat_args()
-    chaser_sat.generate_sat_args()
-    print(target_sat.sat_args)
+    # initialise orbits for both satellites
+    
 
-    import pandas as pd
     
     # Simulation loop
     done = False
     i=0
     while not done:
         # Take a step with some action
-        obs, reward, done, truncated, info = env.step([0, (0,0,0,0)])
+        obs, reward, done, truncated, info = env.step([0, (2,1,0,0)])
 
-        if i==0:
-            target_kepler = obs[0][9:14]
-            chaser_kepler = obs[1][9:14]
+    #     if i==0:
+    #         target_kepler = obs[0][9:14]
+    #         chaser_kepler = obs[1][9:14]
 
-            target_data.append(target_kepler.tolist())
-            chaser_data.append(chaser_kepler.tolist())
+    #         target_data.append(target_kepler.tolist())
+    #         chaser_data.append(chaser_kepler.tolist())
 
-            i+=1
+    #         i+=1
         
-        # time = obs[0][-1]*5700
-        # target_pos = obs[0][0:3]  # First 3 elements are position
-        # chaser_pos = obs[1][0:3]  # First 3 elements are position       
-
-        # # append to list
-        # target_data.append([time] + target_pos.tolist())
-        # chaser_data.append([time] + chaser_pos.tolist())
+        time = obs[0][-1]*5700
+        chaser_obs = obs[1][0:7]  # First 3 elements are position       
+        # append to list
+    
+        chaser_data.append([time] + chaser_obs.tolist())
     
 
-    # # Convert to pandas DataFrames
-    # target_df = pd.DataFrame(target_data, columns=['time', 'x', 'y', 'z'])
-    # chaser_df = pd.DataFrame(chaser_data, columns=['time', 'x', 'y', 'z'])#
-
-    target_df = pd.DataFrame(target_data, columns=['semi_major_axis', 'eccentricity', 'inclination', 'ascending_node', 'argument_of_periapsis'])
-    chaser_df = pd.DataFrame(chaser_data, columns=['semi_major_axis', 'eccentricity', 'inclination', 'ascending_node', 'argument_of_periapsis'])
+    # Convert to pandas DataFrames
+    import pandas as pd
+    chaser_df = pd.DataFrame(chaser_data)
     
     # Save to CSV files
-    target_df.to_csv('target_trajectory.csv', index=False)
     chaser_df.to_csv('chaser_trajectory.csv', index=False)
     
     print("Trajectory data saved to CSV files")

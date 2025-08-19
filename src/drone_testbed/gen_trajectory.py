@@ -484,7 +484,7 @@ if __name__ == '__main__':
     wp = np.hstack([t[:, np.newaxis], wp])
     #print(wp)
     mg = ManoeuvreGenerator(sat_waypoints=wp, num_segments=5, dist_sf=1, speed_up=1)
-    print(mg.get_trajectory())
+    #print(mg.get_trajectory())
 
     target_orb = OrbitGenerator(target_orb_elems, dist_sf=1e-6)
     chaser_orb = OrbitGenerator(chaser_orb_elems, dist_sf=1e-6)
@@ -501,6 +501,6 @@ if __name__ == '__main__':
     mg.plot_manoeuvre(ax, plot_poly=False)
 
 
-    target_orb.plot_orbits(ax)
-    chaser_orb.plot_orbits(ax)
+    # target_orb.plot_orbits(ax)
+    # chaser_orb.plot_orbits(ax)
     plt.show()

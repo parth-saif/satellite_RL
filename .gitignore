@@ -21,3 +21,6 @@ Thumbs.db
 
 # ignore log files
 *.log
+
+#ignore archive
+archive/
