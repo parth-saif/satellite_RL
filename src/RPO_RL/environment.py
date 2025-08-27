@@ -24,7 +24,7 @@ class OEDynamics(dyn.BasicDynamicsModel):
         super().__init__(*args, **kwargs)
     
     @property
-    def eccentric_anomaly(self):
+    def eccentric_anomaly(self) -> float:
         """
         Calculate the Eccentric Anomaly E from True Anomaly nu and Eccentricity e.
         """
@@ -37,7 +37,7 @@ class OEDynamics(dyn.BasicDynamicsModel):
         return E
     
     @property
-    def mean_anomaly(self):
+    def mean_anomaly(self) -> float:
         """
         Calculate Mean Anomaly M.
         """
@@ -47,7 +47,7 @@ class OEDynamics(dyn.BasicDynamicsModel):
         return M
     
     @property
-    def argument_of_latitude(self):
+    def argument_of_latitude(self) -> float:
         """
         Calculate the Argument of Latitude u from Argument of Periapsis omega.
         """
@@ -56,7 +56,7 @@ class OEDynamics(dyn.BasicDynamicsModel):
         return u
     
     @property
-    def eccentricity_vec(self):
+    def eccentricity_vec(self) -> np.ndarray:
         """
         Eccentricity Vector
         """

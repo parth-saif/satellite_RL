@@ -24,6 +24,7 @@ import math
 import matplotlib.pyplot as plt
 from cflib.crazyflie.mem import CompressedSegment
 from cflib.crazyflie.mem import CompressedStart
+from typing import Tuple, List
 
 packages_folders = ['./packages/uav_trajectories/scripts', './tests'] # path to the uav_trajectories package
 import sys
@@ -33,7 +34,7 @@ for packages_folder in packages_folders:
 
 # open source scripts for fitting 7th order polynomial segments from waypoints
 from generate_trajectory import generate_trajectory # open source trajectory generation package
-from uav_trajectory import Trajectory # import the Trajectory class from the package
+from uav_trajectory import Trajectory, Polynomial # import the Trajectory class from the package
 
 class PolyTrajectory(Trajectory):
     """
@@ -41,11 +42,11 @@ class PolyTrajectory(Trajectory):
     Inherits from the Trajectory class to provide additional functionality.
     Adds method to output trajectory as an array instead of csv.
     """
-    def __init__(self, polynomials=None, duration=None):
+    def __init__(self, polynomials: Polynomial = None, duration: float = None):
         super().__init__()
         self.polynomials = polynomials if polynomials is not None else None
         self.duration = duration if duration is not None else None
-    def to_array(self):
+    def to_array(self) -> np.ndarray:
         """
         Convert the trajectory to a numpy array format.
         :return: Numpy array of the trajectory in the format [[time, x, y, z, yaw], ...]
@@ -60,7 +61,7 @@ class TrajectoryGenerator: # parent trajectory generator class
     """
         Base trajectory generator class. Handles shared proprties and static methods.
     """
-    def __init__(self, dist_sf = 1e-6, speed_up=100):
+    def __init__(self, dist_sf: float = 1e-6, speed_up: float = 100):
         self.dist_sf = dist_sf # space-scale to drone-scale scaling factor
         self.speed_up = speed_up # speed up factor
 
@@ -70,7 +71,7 @@ class TrajectoryGenerator: # parent trajectory generator class
         pass
 
     @staticmethod
-    def evaluate_bezier(t, control_points):
+    def evaluate_bezier(t: float, control_points: np.ndarray) -> np.ndarray:
         """
         Evaluates a Bézier curve of any order at parameter t.
         
@@ -93,7 +94,7 @@ class TrajectoryGenerator: # parent trajectory generator class
         return point
     
     @staticmethod
-    def comb(a, b): # utility function to compute binomial coefficients
+    def comb(a: int, b: int) -> int: # utility function to compute binomial coefficients
         f = math.factorial
         return f(a) / f(b) / f(a - b)
     
@@ -112,7 +113,7 @@ class TrajectoryGenerator: # parent trajectory generator class
             ax.scatter(control_polygon[:, 0], control_polygon[:, 1], control_polygon[:, 2], c='k', marker='s', s=25, label='Control Points' if i == 0 else "")
 
 class OrbitGenerator(TrajectoryGenerator):
-    def __init__(self, orbital_elems, dist_sf = 1e-6, speed_up=100):
+    def __init__(self, orbital_elems: list, dist_sf: float = 1e-6, speed_up: float =100):
         """
         Orbit Generator computes 4 cubic Bezier curves to generate orbital trajectories.
         :param orbital_elems: List of orbital elements excluding true anomaly.
@@ -138,7 +139,7 @@ class OrbitGenerator(TrajectoryGenerator):
         self.segment_durations = np.array(self.calculate_segment_durations()) # Calculate realistic durations
         self.segment_durations_scaled = self.segment_durations/self.speed_up 
     
-    def orbital_elements_to_ellipse_params(self):
+    def orbital_elements_to_ellipse_params(self) -> Tuple:
         """
         Converts classical orbital elements into 3D geometric ellipse parameters
         needed for Bézier curve generation.
@@ -202,7 +203,7 @@ class OrbitGenerator(TrajectoryGenerator):
 
         self.ellipse_params = (center_3d, major_axis_vec, minor_axis_vec, normal_vec)
     
-    def ellipse_to_bezier_segments_3d(self):
+    def ellipse_to_bezier_segments_3d(self) -> np.ndarray:
         """
         Converts 3D ellipse parameters into 4 cubic Bézier curve segments - 4 is enough for general ellipse.
         """
@@ -223,7 +224,7 @@ class OrbitGenerator(TrajectoryGenerator):
 
         self.bezier_segs = np.array([p[0:4], p[4:8], p[8:12], p[12:16]])
 
-    def _true_to_eccentric_anomaly(self, nu):
+    def __true_to_eccentric_anomaly(self, nu: float) -> float:
         """
         Converts true anomaly (nu) to eccentric anomaly (E).
         This provides an intermediate step to getting the average duration of a segment.
@@ -232,14 +233,14 @@ class OrbitGenerator(TrajectoryGenerator):
         E = 2 * np.arctan(np.sqrt((1 - self.e) / (1 + self.e)) * np.tan(nu / 2))
         return E
 
-    def _eccentric_to_mean_anomaly(self, E):
+    def __eccentric_to_mean_anomaly(self, E: float) -> float:
         """
         Converts eccentric anomaly (E) to mean anomaly (M) using Kepler's Equation.
         """
         M = E - self.e * np.sin(E)
         return M
     
-    def calculate_segment_durations(self):
+    def calculate_segment_durations(self) -> list:
         """
         Computes the time duration for each of the four elliptical quadrant segments
         based on Kepler's Second Law.
@@ -262,8 +263,8 @@ class OrbitGenerator(TrajectoryGenerator):
         nu_boundaries = [0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi]
         
         # Convert true anomalies to mean anomalies
-        E_boundaries = [self._true_to_eccentric_anomaly(nu) for nu in nu_boundaries]
-        M_boundaries = [self._eccentric_to_mean_anomaly(E) for E in E_boundaries]
+        E_boundaries = [self.__true_to_eccentric_anomaly(nu) for nu in nu_boundaries]
+        M_boundaries = [self.__eccentric_to_mean_anomaly(E) for E in E_boundaries]
 
         # Calculate the time of flight (delta_t) for each segment
         durations = []
@@ -278,13 +279,13 @@ class OrbitGenerator(TrajectoryGenerator):
             
         return durations
     
-    def get_drone_orbit(self): # extract bezier segments and durations, both scaled to drone-scale
+    def get_drone_orbit(self) -> Tuple[List, List]: # extract bezier segments and durations, both scaled to drone-scale
         self.orbital_elements_to_ellipse_params()
         self.ellipse_to_bezier_segments_3d()
 
         return self.bezier_segs, self.segment_durations_scaled
     
-    def get_trajectory(self): # compose trajectory in compressed format for upload. Assume yaw is 0 for now.
+    def get_trajectory(self) -> list[CompressedStart, CompressedSegment]: # compose trajectory in compressed format for upload. Assume yaw is 0 for now.
         trajectory = [ # duration, elem_x, elem_y, elem_z, elem_yaw -> the elems are Bezier curve control points.
             # use first control point as start?
             CompressedStart(0.0,self.bezier_segs[0, 0, 0], self.bezier_segs[0, 0, 1], self.bezier_segs[0, 0, 2], []),
@@ -314,7 +315,7 @@ class OrbitGenerator(TrajectoryGenerator):
         ax.legend()
 
 class ManoeuvreGenerator(TrajectoryGenerator):
-    def __init__(self, sat_waypoints, num_segments, max_waypoints=None, dist_sf=1e-6, speed_up=100):
+    def __init__(self, sat_waypoints: list, num_segments: int, max_waypoints: int =None, dist_sf: float =1e-6, speed_up: float =100):
         """
         Manoeuvre generator fits segemnts of 7th order polynomials to create a trajectory with equal durations.
         Converts to 7th order Bezier curves for data compression.
@@ -353,7 +354,7 @@ class ManoeuvreGenerator(TrajectoryGenerator):
         # convert to bezier trajectory
         self.bezier_segs = self.poly2bez()
         
-    def gen_drone_traj(self):
+    def gen_drone_traj(self) -> np.ndarray:
         """
         Generate a drone trajectory as a 7th order polynomial segments from the provided waypoints.
         """
@@ -363,7 +364,7 @@ class ManoeuvreGenerator(TrajectoryGenerator):
         traj_array = self.trajectory.to_array()  # convert the trajectory to a numpy array format
         return traj_array
 
-    def poly2bez(self):
+    def poly2bez(self) -> np.ndarray:
         """
         Convert polynomial segments to Bezier segments for compression.
         Match the position and velocity.
@@ -412,7 +413,7 @@ class ManoeuvreGenerator(TrajectoryGenerator):
 
         return np.array(bezier_traj)
 
-    def get_trajectory(self): # compose compressed trajectory, assuming yaw is 0 for now.
+    def get_trajectory(self) -> list[CompressedStart, CompressedSegment]: # compose compressed trajectory, assuming yaw is 0 for now.
         trajectory = [CompressedStart(0.0,self.bezier_segs[0, 0, 0], self.bezier_segs[0, 0, 1], self.bezier_segs[0, 0, 2], [])]
         num_segments = self.bezier_segs.shape[0]
         segment_duration = self.duration / num_segments # use equal durations for segments
@@ -428,7 +429,7 @@ class ManoeuvreGenerator(TrajectoryGenerator):
             )
         return trajectory
 
-    def plot_manoeuvre(self, ax, plot_poly=True, plot_bezier=True):
+    def plot_manoeuvre(self, ax, plot_poly: bool = True, plot_bezier: bool = True):
         """
         Plots waypoints, a 7th-order polynomial trajectory, and Bézier segments on a 3D axis.
 
@@ -454,7 +455,7 @@ class ManoeuvreGenerator(TrajectoryGenerator):
         if plot_bezier:
             self.plot_bez(ax)
 
-    def eval_poly(self):
+    def eval_poly(self) -> np.ndarray:
         """
         Return evaluated polynomial positions in the experiment duration - for plotting.
         """

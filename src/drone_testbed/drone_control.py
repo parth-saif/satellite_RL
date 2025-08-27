@@ -27,7 +27,7 @@ class DroneController(): # base drone controller class
     """
     Base Drone controller class.
     """
-    def __init__(self, uri_set):
+    def __init__(self, uri_set: set):
         """
         Initialise swarm.
         :param uri_set: Set of URIs for drones in the swarm.

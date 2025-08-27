@@ -2,8 +2,9 @@
 Define non-linear functions for calculating quasi-nonsingular Relative Orbital Elements (ROE) between Deputy and Chief.
 """
 import numpy as np
+from bsk_rl import sats
 
-def delta_a(deputy, chief):
+def delta_a(deputy: sats.Satellite, chief: sats.Satellite) -> float:
     """
     Calculate normalised relative difference between semi-major axes.
     """
@@ -11,7 +12,7 @@ def delta_a(deputy, chief):
     a_c = chief.dynamics.semi_major_axis
     return (a_d-a_c)/a_c
 
-def delta_lambda(deputy, chief):
+def delta_lambda(deputy: sats.Satellite, chief: sats.Satellite) -> float:
     """
     Calculate the relative mean longitude as non-linear combination.
     """
@@ -25,7 +26,7 @@ def delta_lambda(deputy, chief):
 
     return (u_d-u_c) + (Omega_d - Omega_c)*np.cos(i_c)
 
-def delta_e_vec(deputy, chief):
+def delta_e_vec(deputy: sats.Satellite, chief: sats.Satellite) -> np.ndarray:
     """
     Calculate the difference in eccentricity vectors.
     """
@@ -33,7 +34,7 @@ def delta_e_vec(deputy, chief):
     e_c_vec = chief.dynamics.eccentricity_vec
     return e_d_vec - e_c_vec
 
-def delta_i_vec(deputy, chief):
+def delta_i_vec(deputy: sats.Satellite, chief: sats.Satellite) -> np.ndarray:
     """
     Calculate the change in inclination vector as a non-linear combination.
     """
