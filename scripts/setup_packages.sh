@@ -24,11 +24,11 @@ sudo apt-get update
 sudo apt-get install -y \
     git \
     build-essential \
-    python3-dev \
-    python3-pip \
-    python3-venv \
-    python3-setuptools \
-    python3-tk \
+    python3.10-dev \
+    python3.10-pip \
+    python3.10-venv \
+    python3.10-setuptools \
+    python3.10-tk \
     swig
 
 # --- Basislik ---
@@ -53,7 +53,6 @@ else
     cd "$PACKAGE1_SRC_DIR"
     python3 conanfile.py --clean
 fi
-
 # Check if the build was successful
 if [ $? -ne 0 ]; then
     echo "Error: Failed to build $PACKAGE1_NAME."
@@ -74,7 +73,7 @@ else
     echo "Cloning $PACKAGE2_NAME source from $PACKAGE2_REPO..."
     git clone "$PACKAGE2_REPO" "$PACKAGE2_SRC_DIR" || { echo "Error: Failed to clone $PACKAGE2_NAME."; exit 1; }
     cd "$PACKAGE2_SRC_DIR"
-    python -m pip install -e "." ".[rllib]" && finish_install
+    python -m pip install -e ".[all]" #&& finish_install
 fi  
 
 # Check if the installation was successful
@@ -110,7 +109,7 @@ if [ -d "$PACKAGE3_SRC_DIR" ]; then
     echo "Source for $PACKAGE3_NAME already exists. Skipping."
 else
     echo "Cloning $PACKAGE3_NAME source from $PACKAGE3_REPO..."
-    git clone "$PACKAGE3_REPO" "$PACKAGE3_SRC_DIR" || { echo "Error: Failed to clone $PACKAGE3_NAME."; exit 1; }
+    git clone --recursive "$PACKAGE3_REPO" "$PACKAGE3_SRC_DIR" || { echo "Error: Failed to clone $PACKAGE3_NAME."; exit 1; }
     # Build the package
     echo "Building $PACKAGE3_NAME..."
     cd "$PACKAGE3_SRC_DIR"
