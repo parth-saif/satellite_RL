@@ -17,6 +17,7 @@ echo "--- Starting external package setup ---"
 
 # Create necessary directories if they don't exist
 mkdir -p "$EXTERNAL_PACKAGES_DIR"
+export PYTHONPATH=EXTERNAL_PACKAGES_DIR:$PYTHONPATH
 
 # install neceassary dependencies
 echo "--- Installing necessary dependencies ---"
@@ -24,13 +25,13 @@ sudo apt-get update
 sudo apt-get install -y \
     git \
     build-essential \
-    python3.10-dev \
-    python3.10-pip \
-    python3.10-venv \
-    python3.10-setuptools \
-    python3.10-tk \
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    python3-setuptools \
+    python3-tk \
     swig
-
+pip install packaging
 # --- Basislik ---
 echo "--- Installing Basilisk ---"
 PACKAGE1_NAME="basilisk"
@@ -51,6 +52,7 @@ else
     git clone "$PACKAGE1_REPO" "$PACKAGE1_SRC_DIR" || { echo "Error: Failed to clone $PACKAGE1_NAME."; exit 1; }
     # Then build Basilisk
     cd "$PACKAGE1_SRC_DIR"
+    pip3 install -r requirements_dev.txt
     python3 conanfile.py --clean
 fi
 # Check if the build was successful
@@ -73,7 +75,7 @@ else
     echo "Cloning $PACKAGE2_NAME source from $PACKAGE2_REPO..."
     git clone "$PACKAGE2_REPO" "$PACKAGE2_SRC_DIR" || { echo "Error: Failed to clone $PACKAGE2_NAME."; exit 1; }
     cd "$PACKAGE2_SRC_DIR"
-    python -m pip install -e ".[all]" #&& finish_install
+    python3 -m pip install -e ".[rllib]"
 fi  
 
 # Check if the installation was successful
@@ -82,17 +84,6 @@ if [ $? -ne 0 ]; then
     exit 1
 else
     echo "$PACKAGE2_NAME installed successfully."
-fi
-
-# --- Crazyflie ---
-echo "--- Installing Crazyflie Python API---"
-pip install cfclient # this also installs cflib 
-# Check if the installation was successful
-if [ $? -ne 0 ]; then
-    echo "Error: Failed to install Crazyflie Python API."
-    exit 1
-else
-    echo "Crazyflie Python API installed successfully."
 fi
 
 # --- Trajectory Generation Package ---

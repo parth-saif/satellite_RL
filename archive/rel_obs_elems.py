@@ -3,6 +3,60 @@ Define non-linear functions for calculating quasi-nonsingular Relative Orbital E
 """
 import numpy as np
 from bsk_rl import sats
+from bsk_rl.sim import dyn
+
+class OEDynamics(dyn.BasicDynamicsModel):
+    """
+    Modified dynamics model to calculate further orbital elements:
+    - Eccentric Anomaly, E
+    - Mean Anomaly, M
+    - Argument of Latitude, u
+    - Eccentricy vector, e_vec
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    @property
+    def eccentric_anomaly(self) -> float:
+        """
+        Calculate the Eccentric Anomaly E from True Anomaly nu and Eccentricity e.
+        """
+        nu = self.true_anomaly
+        e = self.eccentricity
+
+        E_cos = (e + np.cos(nu)) / (1 + e * np.cos(nu))
+        E_sin = (np.sqrt(1 - e**2) * np.sin(nu)) / (1 + e * np.cos(nu))
+        E = np.arctan2(E_sin, E_cos)
+        return E
+    
+    @property
+    def mean_anomaly(self) -> float:
+        """
+        Calculate Mean Anomaly M.
+        """
+        e = self.eccentricity
+        E = self.eccentric_anomaly
+        M = E - e*np.sin(E)
+        return M
+    
+    @property
+    def argument_of_latitude(self) -> float:
+        """
+        Calculate the Argument of Latitude u from Argument of Periapsis omega.
+        """
+        omega = self.argument_of_periapsis
+        u = omega + self.mean_anomaly
+        return u
+    
+    @property
+    def eccentricity_vec(self) -> np.ndarray:
+        """
+        Eccentricity Vector
+        """
+        e =  self.eccentricity
+        omega = self.argument_of_periapsis
+        e_vec =  e*np.array([np.cos(omega), np.sin(omega)])
+        return e_vec
 
 def delta_a(deputy: sats.Satellite, chief: sats.Satellite) -> float:
     """

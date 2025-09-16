@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "./packages/basilisk/dist3",
+        "./packages/bsk_rl/src"
+    ]
+}
