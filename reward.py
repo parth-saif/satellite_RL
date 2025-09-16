@@ -1,14 +1,13 @@
 """
-Define the rewards.
+Define the rendezvous reward as a list of 
 """
 import numpy as np
-from bsk_rl.data.base import GlobalReward, Data
-from bsk_rl.data import ResourceReward
 
-class DistanceData(Data):
-    """
-    Data for tracking 
-    """
+# import data and data stores for position and velocity error
+from datastores import DistanceDataStore, VelocityDataStore
+
+from bsk_rl.data.base import GlobalReward
+from bsk_rl.data import ResourceReward
 
 class DistanceReward(GlobalReward):
     def __init__(self, **kwargs): 
