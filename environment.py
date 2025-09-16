@@ -14,3 +14,12 @@ from satellites import ChiefSat, DeputySat
 
 # import reward types
 from rewards import DistanceReward, VelocityReward
+
+class RendezvousEnv:
+    """
+    Environment for Rendezvous task between 2 satellites.
+    """
+    def __init__(self, config):
+        """
+        
+        """
