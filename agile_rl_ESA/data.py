@@ -29,18 +29,18 @@ class DistanceData(Data):
         """
         String representation of the data
         """
-        return f"DistanceData(distance_error={self.distance_error})"
+        return f"DistanceData(distance_error={self.distance_err})"
 
 class VelocityData(Data):
     """
     Data for tracking the velocity error from a target.
     """
-    def __init__(self, velocity_error: float = 0.0) -> None:
+    def __init__(self, velocity_err: float = 0.0) -> None:
         """
         Construct velocity data.
         :param velocity_error: The calculated Euclidean norm of the velocity error vector.
         """
-        self.velocity_error = velocity_error
+        self.velocity_error = velocity_err
 
     def __add__(self, other: "VelocityData") -> "VelocityData":
         """

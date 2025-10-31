@@ -19,7 +19,7 @@ class ChiefSat(sats.Satellite):
         ]
     action_spec = [act.Drift()] # action is to do nothing
     dyn_type = dyn.BasicDynamicsModel
-    fsw_type = fsw.BasicFSWModel
+    fsw_type = fsw.MagicOrbitalManeuverFSWModel
 
 class DeputySat(sats.Satellite): 
     """
@@ -38,6 +38,6 @@ class DeputySat(sats.Satellite):
     ),
     obs.Time()
     ]
-    action_spec = [act.ImpulsiveThrustHill("ChiefSat")] # continuous action is to apply an impulsive thrust in the Hill frame
+    action_spec = [act.ImpulsiveThrustHill("ChiefSat", "Hill")] # continuous action is to apply an impulsive thrust in the Hill frame
     dyn_type = dyn.BasicDynamicsModel
     fsw_type = fsw.MagicOrbitalManeuverFSWModel # flight software model for the satellite -> has fuel remaining property for thruster control

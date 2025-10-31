@@ -1,3 +1,6 @@
-packages/
-sat_venv/
-test/
+.vscode
+basilisk_repo/__pycache__/
+basilisk_repo/.venv/
+poliastro_gym/.venv/
+agile_rl_ESA/.venv/
+agile_rl_ESA/__pycache__/

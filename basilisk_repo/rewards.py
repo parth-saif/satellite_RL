@@ -17,20 +17,18 @@ class DistanceReward(GlobalReward):
 
     def __init__(
         self,
-        name: str,
         weight: float,
         target: list,
         position_fn: Callable,
     ) -> None:
         """
-        :param name (str): A name for this reward component.
         :param weight (float): The scaling factor for the reward. Should be negative
                         to create a penalty for distance. -> error is positive, so weight should be negative.
         :param target (list): The target position vector (e.g., [-100.0, 0.0, 0.0]).
         :param position_fn (Callable): A function that extracts the relevant position
                                 vector from the satellite object. -> this can be any frame you want
         """
-        super().__init__(name=name)
+        super().__init__()
         self.weight = weight
         # arguments to pass to data store
         self.data_store_kwargs = dict(position_fn=position_fn, target=target)
@@ -57,12 +55,11 @@ class VelocityReward(GlobalReward):
 
     def __init__(
         self,
-        name: str,
         weight: float,
         target: list,
         velocity_fn: Callable,
     ) -> None:
-        super().__init__(name=name)
+        super().__init__()
         self.weight = weight
         self.data_store_kwargs = dict(velocity_fn=velocity_fn, target=target)
         
